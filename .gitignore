@@ -1,0 +1,17 @@
+# Ignore build output
+build/
+dist/
+
+# Ignore MPLAB X-generated files
+nbproject/Makefile-*
+nbproject/private/
+
+# Ignore project-specific temporary files
+*.log
+*.swp
+*.swo
+*.swn
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
