@@ -14,21 +14,35 @@
     RxSCRATCH		EQU	0x06
     SCRATCH		EQU	0x07
     WTEMP		EQU	0x08
-
-		
     followColor		EQU	0x09 ; Determines curren color being followed
-		
     Count1		EQU	0x0A
     Count2		EQU	0x0B
     Count3		EQU	0x0C
     CLRCNT		EQU	0x0D; used to iterate over 3 colors in Calibration
+    ADCONSEL		EQU	0x0E; used to determine which ADC channel to select
+    THRESH3		EQU	0x0F; THRESH3 RGB : {R3, G3, B3}0x0F,0x10,0x11
+    THRESH4		EQU	0x12; THRESH4 RGB : {R4, G4, B4}0x12,0x13,0x14
+    THRESH5		EQU	0x15; THRESH5 RGB : {R5, G5, B5}0x15,0x16,0x17
+    THRESH6		EQU	0x18; THRESH6 RGB : {R6, G6, B6}0x18,0x19,0x1A
+    THRESH7		EQU	0x1B; THRESH7 RGB : {R7, G7, B7}0x1B,0x1C,0x1D
+    SMPL0		EQU	0x1E; for averaging in readAndAverage
+    SMPL1		EQU	0x1F; for averaging in readAndAverage
 	
     ;state  bits--------------
     stateHome	EQU	0
     stateSelC	EQU	1
     stateCal	EQU	2
     stateRace	EQU	3
-    ;-------------------------
+    ;Constants to switch RGBs--------
+    RED		EQU	1
+    GREEN	EQU	2
+    BLUE	EQU	4
+    ;Constants for channels of the ADC
+    C3		EQU	00111101B;Leftmost sensor
+    C4		EQU	01000001B
+    C5		EQU	01000101B
+    C6		EQU	01001001B
+    C7		EQU	01001101B;Rightmost sensor
     
     #include <xc.inc>
     #include "pic18f45k22.inc"
@@ -62,6 +76,27 @@ INIT:
     CLRF    TRISB
     BSF	    TRISB,0
     
+    ;using PortE to switch on the RGBs
+    CLRF    PORTE
+    CLRF    LATE
+    CLRF    ANSELE
+    CLRF    TRISE
+    
+    ;using Port C to read sensors
+    CLRF    PORTC
+    CLRF    LATC
+    MOVLW   11111000B
+    MOVWF   ANSELC
+    MOVWF   TRISC
+    
+    ;Configuring ADC 
+    MOVLW   C5
+    MOVWF   ADCON0
+    CLRF    ADCON1;Internal Vdd of 3.3V and Vss of 0V
+    MOVLW   00111111B;Left justified,20Tad,Frc
+    MOVWF   ADCON2
+    CLRF    ADRESH
+    
     ;Config IO Pins for EUART
     CLRF    PORTD
     CLRF    LATD
@@ -88,6 +123,8 @@ INIT:
     MOVLW   00100000B ; RC2IE 
     MOVWF   PIE3
     CLRF    PIR3
+    
+    ;Config ADC
     
     MOVLB   0x00
     CLRF    HighLvlStateReg
@@ -164,14 +201,35 @@ STATE_CALIBRATION:
     State_Cal_Red:
 	BSF	    PORTB,5
 	call	    Calibrate
-	BRA	    End_Of_State_Cal
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkRed:
+	    BTG		    PORTB,5
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkRed
+	    BRA		    End_Of_State_Cal
     State_Cal_Green:
 	BSF	    PORTB,4
 	call	    Calibrate
-	BRA	    End_Of_State_Cal
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkGreen:
+	    BTG		    PORTB,4
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkGreen
+	    BRA		    End_Of_State_Cal
     State_Cal_Blue:
 	BSF	    PORTB,3
 	call	    Calibrate
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkBlue:
+	    BTG		    PORTB,3
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkBlue
 End_Of_State_Cal:
     call    Check_Code_Recieved
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -495,30 +553,167 @@ End_Of_TransmitResponse:
     return
 ;#--------------------------END OF SUB ROUTINE----------------------------------
     
-;########################CALIBRATION SUB ROUTINE################################
+;########################CALIBRATION SUB ROUTINES################################
 Calibrate:
-    call    Delay333
+    MOVLW   3
+    CPFSLT  CLRCNT ; calibrating Red
+    BRA	    FlashRed
+    DECF    WREG
+    CPFSLT  CLRCNT ; calibrating Green
+    BRA	    FlashGreen
+    DECF    WREG
+    CPFSLT  CLRCNT ; calibrating Blue
+    BRA	    FlashBlue
+    NoCalibrate:
+	BRA	    End_Of_Calibrate
+    FlashRed:
+	MOVLW	    RED
+	BRA	    Flash
+    FlashGreen:
+	MOVLW	    GREEN
+	BRA	    Flash
+    FlashBlue:
+	MOVLW	    BLUE
+    Flash:
+	MOVWF	    PORTE
+    SensorItr:
+	MOVF	    CLRCNT, W
+	SUBLW	    3 ; Determine value to offset THRESH3 (3 - CLRCNT)
+	ADDLW	    THRESH3
+	MOVWF	    FSR0L ; MAKE FSR0 point to THRESH register : {R0, G0, B0}
+	call	    longDelay
+	MOVLW	    3
+	MOVWF	    ADCONSEL
+	MOVLW	    5
+	MOVWF	    Count1 ; Used to iterate over the 5 sensors
+	loopSensors:
+	    call	loadADCON
+	    call	readAndAverage
+	    MOVWF	INDF0;move the ADC reading to register that FSR0 points to
+	    MOVLW	3
+	    ADDWF	FSR0L,F;Point to the next sensor register address
+	    INCF	ADCONSEL;Increment so that in next loop, using next channel
+	    DECFSZ	Count1
+	    BRA		loopSensors
+End_Of_Calibrate:
     DECF    CLRCNT
+    CLRF    PORTE
+    return
+;#######################END OF SUB ROUTINE######################################
+    
+;###############################ADC SUB ROUTINES################################
+readAndAverage: ; Takes consecutive reads on a sensors and then right shifts to divide
+	MOVLW   8
+	MOVWF   Count2
+	CLRF    SMPL0
+	CLRF    SMPL1
+    CALloop:
+	call    ADCread
+	ADDWF   SMPL0,F
+	BTFSC   STATUS,0
+	INCF    SMPL1,F
+	DECFSZ  Count2
+	BRA	CALloop
+    
+	RRCF	SMPL1
+	RRCF	SMPL0
+	RRCF	SMPL1
+	RRCF	SMPL0
+	RRCF	SMPL1
+	RRCF	SMPL0
+	MOVF	SMPL0,W
     return
     
+    ADCread:
+    Poll:	
+	BSF 	GO 		; Start conversion
+	BTFSC 	GO 		; Is conversion done?
+	BRA 	$-2 
+    
+	MOVF    ADRESH,W
+    EndOfADCread:
+	return
+	
+;-----------------SUB ROUTINE FOR Loading ADCON0 register-----------------------
+loadADCON:
+    MOVLW	7
+    CPFSLT	ADCONSEL
+    BRA		load7
+    MOVLW	6
+    CPFSLT	ADCONSEL
+    BRA		load6
+    MOVLW	5
+    CPFSLT	ADCONSEL
+    BRA		load5
+    MOVLW	4
+    CPFSLT	ADCONSEL
+    BRA		load4
+    BRA		load3
+	
+    load7:
+	MOVLW	C7
+	MOVWF	ADCON0
+	BRA	endLoadADCON
+    load6:
+	MOVLW	C6
+	MOVWF	ADCON0
+	BRA	endLoadADCON
+    load5:
+	MOVLW	C5
+	MOVWF	ADCON0
+	BRA	endLoadADCON
+    load4:
+	MOVLW	C4
+	MOVWF	ADCON0
+	BRA	endLoadADCON
+    load3:
+	MOVLW	C3
+	MOVWF	ADCON0
+	BRA	endLoadADCON
+endLoadADCON:
+    return
+;#---------------------------END OF ADC SUB ROUTINES----------------------------
+    
+;###############################DELAY SUB ROUTINES##############################
 Delay333:
     MOVLW   21     
     MOVWF   Count3
-DelayLoop3:
-    MOVLW   90 
-    MOVWF   Count1
-DelayLoop1:
-    MOVLW   183    
-    MOVWF   Count2
-DelayLoop2:
-    NOP            
-    DECFSZ  Count2, f  
-    GOTO    DelayLoop2
-    DECFSZ  Count1, f  
-    GOTO    DelayLoop1
-    DECFSZ  Count3, f
-    GOTO    DelayLoop3 
+    DelayLoop3:
+	MOVLW   90 
+	MOVWF   Count1
+    DelayLoop1:
+	MOVLW   183    
+	MOVWF   Count2
+    DelayLoop2:
+	NOP            
+	DECFSZ  Count2, f  
+	BRA    DelayLoop2
+	DECFSZ  Count1, f  
+	BRA    DelayLoop1
+	DECFSZ  Count3, f
+	BRA    DelayLoop3 
     return           
+    
+longDelay: ; 3 Seconds
+    MOVLW   80     
+    MOVWF   Count3
+    longLoop0:
+	MOVLW   200 
+	MOVWF   Count1
+    longLoop1:
+	MOVLW   220    
+	MOVWF   Count2
+    longLoop2:
+	NOP            
+	DECFSZ  Count2, f  
+	BRA	longLoop2
+	DECFSZ  Count1, f  
+	BRA     longLoop1
+	DECFSZ  Count3, f
+	BRA     longLoop0 
+    return
+    
+;#------------------------END OF DELAY SUB ROUTINES-----------------------------
 
     
 ; Code responses for the MARV to send, are stored in a table in Program memory
