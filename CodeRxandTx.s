@@ -5,7 +5,7 @@
     CONFIG FOSC = INTIO67
     CONFIG WDTEN = OFF
     
-    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving
+    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed
     HighLvlStateReg	EQU	0x01
     Code1		EQU	0x02
     Code2		EQU	0x03
@@ -27,6 +27,7 @@
     THRESH7		EQU	0x1B; THRESH7 RGB : {R7, G7, B7}0x1B,0x1C,0x1D
     SMPL0		EQU	0x1E; for averaging in readAndAverage
     SMPL1		EQU	0x1F; for averaging in readAndAverage
+    TouchThresh		EQU	0x20
 	
     ;state  bits--------------
     stateHome	EQU	0
@@ -43,6 +44,8 @@
     C5		EQU	01000101B
     C6		EQU	01001001B
     C7		EQU	01001101B;Rightmost sensor
+    D3	        EQU     01011101B ; D3 AN23
+    D4	        EQU     01100001B ; D4 AN24
     
     #include <xc.inc>
     #include "pic18f45k22.inc"
@@ -97,10 +100,11 @@ INIT:
     MOVWF   ADCON2
     CLRF    ADRESH
     
-    ;Config IO Pins for EUART
+    ;Config IO Pins for EUART and Touch Sensor
     CLRF    PORTD
     CLRF    LATD
     CLRF    ANSELD
+    BSF	    ANSELD,4 ; Touch sensor pin
     MOVLW   11000000B
     MOVWF   TRISD ; set TRISD 6 AND 7 to 1; EUART automatical converts input and output mode where necessary
     
@@ -236,10 +240,20 @@ End_Of_State_Cal:
 STATE_RACE:
     BTFSS   HighLvlStateReg,stateRace
     GOTO    Main
-    MOVLW   11110010B
-    MOVWF   PORTA
-    ;Write code for state
-    call    Delay333
+    
+    BTFSC   systemUtilReg,2
+    BRA	    DrivingState
+    IdleState:
+	MOVLW   11110010B
+	MOVWF   PORTA
+	call	Idle 
+	BTFSS	systemUtilReg,2 ; check if touch was detected and set drive flag
+	BRA	End_Of_State_Race
+	TransitionToDrive:
+	    call	showRaceColor
+    DrivingState:
+    ;will change to include all drive sub routines
+End_Of_State_Race:
     call    Check_Code_Recieved
     GOTO    Main ; final loop catch statement
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -326,6 +340,7 @@ Home_codes:
     MOVLW   (HomeMode>>16)
     MOVWF   TBLPTRU,0
     
+    call    Idle ; switch of the PWMs, consequently the motors if running
     CLRF    HighLvlStateReg
     BSF	    HighLvlStateReg,stateHome ; MAKE Fall through FSM go to Home
     
@@ -713,7 +728,74 @@ longDelay: ; 3 Seconds
 	BRA     longLoop0 
     return
     
+delay4ms:
+    ;TODO: write delay sub routine for 4ms
+    return
+    
 ;#------------------------END OF DELAY SUB ROUTINES-----------------------------
+;#########################RACE RELATED SUB ROUTINES#############################
+Idle:; Idle is also called when moving the MARV to home mode, Idle is called to 
+     ; switch off the motors, incase home is requested whilst the MARV is moving
+    BTFSS	HighLvlStateReg,stateRace 
+    BRA		End_Of_Idle
+    ; TODO : Include code, to switch off PWMs 
+    BCF		systemUtilReg,2 ; indicate that MARV is Idle, once again
+    BCF		systemUtilReg,3
+    call	Touchsensor
+    call	Touchsensor
+    BTFSS	systemUtilReg,3
+    BRA		End_Of_Idle
+    BSF		systemUtilReg,2
+    ;TODO	Include code to switch on PWMs
+End_Of_Idle:
+    return
+    
+Touchsensor:
+    MOVLW	60
+    MOVWF	TouchThresh
+    BCF		TRISD,4 ;Make touch pin output
+    BSF		PORTD,3 ; Charge Secondary line
+    MOVLW	D3
+    MOVWF	ADCON0
+    call	delay4ms
+    
+    BSF		TRISD,4 ; Make touch pin input
+    MOVLW	D4
+    MOVWF	ADCON0 ; Point ADC to touch pin
+    BCF		PORTD,3 ; Ground secondary line
+    call	ADCread
+    CPFSLT	TouchThresh
+    BSF		systemUtilReg,3 ; flag that a touch was sensed
+    BCF		TRISD,4 ; Make touch pin output 
+    return
+showRaceColor:
+    MOVLW   0
+    CPFSGT  followColor
+    BRA	    displayBlackRace
+    INCF    WREG
+    CPFSGT  followColor
+    BRA	    displayRedRace
+    MOVLW   3
+    CPFSGT  followColor
+    BRA	    displayGreenRace
+    displayBlueRace:
+	MOVLW	11100110B
+	MOVWF	PORTA
+	BRA	End_Of_showRaceColor
+    displayBlackRace:
+	MOVLW   01101110B
+	MOVWF   PORTA
+	BRA	End_Of_showRaceColor
+    displayRedRace:
+	MOVLW	01000010B
+	MOVWF	PORTA
+	BRA	End_Of_showRaceColor
+    displayGreenRace:
+	MOVLW	10111110B
+	MOVWF	PORTA
+End_Of_showRaceColor:
+    return
+;###############################################################################
 
     
 ; Code responses for the MARV to send, are stored in a table in Program memory
