@@ -27,7 +27,21 @@
     THRESH7		EQU	0x1B; THRESH7 RGB : {R7, G7, B7}0x1B,0x1C,0x1D
     SMPL0		EQU	0x1E; for averaging in readAndAverage
     SMPL1		EQU	0x1F; for averaging in readAndAverage
-    TouchThresh		EQU	0x20
+    TouchThresh		EQU	0x20; holds the low threshold for touch sensing
+    LLIStateReg		EQU	0x21; bits represent LLI actions
+    CURRENT3		EQU	0x22; CURRENT3 RGB : {R3, G3, B3}0x22,0x23,0x24
+    CURRENT4		EQU	0x25; CURRENT4 RGB : {R4, G4, B4}0x25,0x26,0x27
+    CURRENT5		EQU	0x28; CURRENT5 RGB : {R5, G5, B5}0x28,0x29,0x2A
+    CURRENT6		EQU	0x2B; CURRENT6 RGB : {R6, G6, B6}0x2B,0x2C,0x2D
+    CURRENT7		EQU	0x2E; CURRENT7 RGB : {R7, G7, B7}0x2E,0x2F,0x30
+    ColorReg3		EQU	0x31; Bit0 : R, Bit1: G, Bit2 : B ; determines what color the sensor is on
+    ColorReg4		EQU	0x32; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg5		EQU	0x33; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg6		EQU	0x34; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg7		EQU	0x35; Bit0 : R, Bit1: G, Bit2 : B
+    stopReg		EQU	0x36
+    lowerClr		EQU	0x37; used in LineMapper
+    SensorLine		EQU	0x38; used in LineMapper and LLI
 	
     ;state  bits--------------
     stateHome	EQU	0
@@ -252,7 +266,11 @@ STATE_RACE:
 	TransitionToDrive:
 	    call	showRaceColor
     DrivingState:
-    ;will change to include all drive sub routines
+	call	CurrentReading
+	call	DetermineColor
+	call	lineMapper
+	call	LLI
+	call	MotorControl
 End_Of_State_Race:
     call    Check_Code_Recieved
     GOTO    Main ; final loop catch statement
@@ -376,18 +394,24 @@ SelectC_codes:
     
 SetColorToBlack: ; default to Choose Black to follow
     CLRF    followColor ; followColor = 0 : Black
+    CLRF    lowerClr ; lowerClr = 0
     BRA	    End_Of_Select_Color_Codes
 SetColorToRed:
     MOVLW   1
     MOVWF   followColor ; followColor = 1 : Red
+    MOVWF   lowerClr ; lowerClr = 1
     BRA	    End_Of_Select_Color_Codes
 SetColorToGreen:
     MOVLW   3
     MOVWF   followColor ; followColor = 3 : Green
+    DECF    WREG
+    MOVWF   lowerClr ; lowerClr = 2
     BRA	    End_Of_Select_Color_Codes
 SetColorToBlue:
     MOVLW   6
     MOVWF   followColor ; followColor = 6 : Blue
+    MOVLW   4
+    MOVWF   lowerClr	; lowerClr = 4
 End_Of_Select_Color_Codes:
     call    TransmitMARVResponse
     GOTO    End_Of_Check_Code
@@ -733,6 +757,7 @@ delay4ms:
     return
     
 ;#------------------------END OF DELAY SUB ROUTINES-----------------------------
+    
 ;#########################RACE RELATED SUB ROUTINES#############################
 Idle:; Idle is also called when moving the MARV to home mode, Idle is called to 
      ; switch off the motors, incase home is requested whilst the MARV is moving
@@ -757,7 +782,8 @@ Touchsensor:
     BSF		PORTD,3 ; Charge Secondary line
     MOVLW	D3
     MOVWF	ADCON0
-    call	delay4ms
+    NOP
+    NOP
     
     BSF		TRISD,4 ; Make touch pin input
     MOVLW	D4
@@ -794,6 +820,210 @@ showRaceColor:
 	MOVLW	10111110B
 	MOVWF	PORTA
 End_Of_showRaceColor:
+    return
+    
+CurrentReading:
+    ;Performs Color strobing and reads ADC after each color is shone
+	MOVLW	RED
+	MOVWF	LATE
+	LFSR	1,CURRENT3; point to red register
+	call	read5Sensors
+	MOVLW	GREEN
+	MOVWF	LATE
+	MOVLW	CURRENT3
+	ADDLW	1;point to green register
+	MOVWF	FSR1L
+	call	read5Sensors
+	MOVLW	BLUE
+	MOVWF	LATE
+	MOVLW	CURRENT3
+	ADDLW	2
+	MOVWF	FSR1L;point to blue register
+	call	read5Sensors
+    return
+    
+read5Sensors:
+    MOVLW   3
+    MOVWF   ADCONSEL
+    MOVLW   5
+    MOVWF   Count1
+loop5Sensors:
+    call    loadADCON
+    call    readAndAverage
+    MOVWF   INDF1;move the ADC reading to register that FSR0 points to
+    MOVLW   3
+    ADDWF   FSR1L,F;Point to the next sensor register address
+    INCF    ADCONSEL
+    DECFSZ  Count1
+    BRA	    loop5Sensors
+    return
+    
+DetermineColor:
+    LFSR	0,CURRENT3
+    LFSR	1,THRESH3
+    call	DtrClrHelper
+    MOVWF	ColorReg3
+	
+    LFSR	0,CURRENT4
+    LFSR	1,THRESH4
+    call	DtrClrHelper
+    MOVWF	ColorReg4
+	
+    LFSR	0,CURRENT5
+    LFSR	1,THRESH5
+    call	DtrClrHelper
+    MOVWF	ColorReg5
+	
+    LFSR	0,CURRENT6
+    LFSR	1,THRESH6
+    call	DtrClrHelper
+    MOVWF	ColorReg6
+	
+    LFSR	0,CURRENT7
+    LFSR	1,THRESH7
+    call	DtrClrHelper
+    MOVWF	ColorReg7
+    return
+
+DtrClrHelper:
+    CLRF	SCRATCH
+    MOVLW	5
+    SUBWF	INDF1,W
+    CPFSLT	INDF0; determine if sensor is Red
+    BSF		SCRATCH,0
+	
+    MOVLW	1
+    ADDWF	FSR0L,F
+    ADDWF	FSR1L,F
+    MOVLW	7
+    SUBWF	INDF1,W; determine if sensor is Green
+    CPFSLT	INDF0
+    BSF		SCRATCH,1
+	
+    MOVLW	1
+    ADDWF	FSR0L,F
+    ADDWF	FSR1L,F
+    MOVLW	2
+    SUBWF	INDF1,W
+    CPFSLT	INDF0
+    BSF		SCRATCH,2
+    MOVF	SCRATCH,W
+    return
+    
+lineMapper:
+    CLRF    stopReg
+    CLRF    SensorLine
+    Sensor3:
+	MOVLW   0
+	CPFSGT  ColorReg3 ; test if on black
+	BSF	stopReg,4
+
+	MOVF    followColor,W
+	ADDLW   1
+	CPFSLT  ColorReg3
+	BRA	Sensor4
+	MOVF    lowerClr,W
+	CPFSLT  ColorReg3
+	BSF	SensorLine,4
+    Sensor4:
+	MOVLW   0
+	CPFSGT  ColorReg4 ; test if on black
+	BSF	stopReg,3
+
+	MOVF    followColor,W
+	ADDLW   1
+	CPFSLT  ColorReg4
+	BRA	Sensor5
+	MOVF    lowerClr,W
+	CPFSLT  ColorReg4
+	BSF	SensorLine,3
+    Sensor5:
+	MOVLW   0
+	CPFSGT  ColorReg5 ; test if on black
+	BSF	stopReg,2
+
+	MOVF    followColor,W
+	ADDLW   1
+	CPFSLT  ColorReg5
+	BRA	Sensor6
+	MOVF    lowerClr,W
+	CPFSLT  ColorReg5
+	BSF	SensorLine,2
+    Sensor6:
+	MOVLW   0
+	CPFSGT  ColorReg6 ; test if on black
+	BSF	stopReg,1
+
+	MOVF    followColor,W
+	ADDLW   1
+	CPFSLT  ColorReg6
+	BRA	Sensor7
+	MOVF    lowerClr,W
+	CPFSLT  ColorReg6
+	BSF	SensorLine,1
+    Sensor7:
+	MOVLW   0
+	CPFSGT  ColorReg7 ; test if on black
+	BSF	stopReg,0
+
+	MOVF    followColor,W
+	CPFSLT  ColorReg7
+	BRA	endOfLineMapper
+	MOVF    lowerClr,W
+	CPFSLT  ColorReg7
+	BSF	SensorLine,0
+endOfLineMapper:
+    return
+    
+LLI:
+    CLRF    LLIStateReg
+    CLRF    PORTB
+    MOVLW   31
+    CPFSEQ  stopReg ; 31 = 11111b means all sensors are on Black
+    BRA	    Evaluations
+Stop:
+    BCF	    systemUtilReg,2 ; set it to go back to Idle
+    BSF	    LLIStateReg,5
+    GOTO    endOfLLI
+Evaluations: 
+    MOVLW   31
+    CPFSLT  SensorLine
+    BRA	    EvalLost
+    BTFSC   SensorLine,0
+    BRA	    EvalExRight
+    BTFSC   SensorLine,4
+    BRA	    EvalExLeft
+    BTFSC   SensorLine,1
+    BRA	    EvalRight
+    BTFSC   SensorLine,3
+    BRA	    EvalLeft
+EvalStraight:
+    BSF	    PORTB,3
+    BSF	    LLIStateReg,0
+    BRA	    endOfLLI
+EvalLeft:
+    BSF	    PORTB,2
+    BSF	    LLIStateReg,1
+    BRA	    endOfLLI
+EvalRight:
+    BSF	    PORTB,4
+    BSF	    LLIStateReg,2
+    BRA	    endOfLLI
+EvalExLeft:
+    BSF	    PORTB,1
+    BSF	    LLIStateReg,3
+    BRA    endOfLLI
+EvalExRight:
+    BSF	    PORTB,5
+    BSF	    LLIStateReg,4
+    BRA	    endOfLLI
+EvalLost:
+    BSF	    LLIStateReg,6
+endOfLLI:
+    return
+    
+MotorControl:;LLIStateReg bits | 0 : Straight | 1 : Left | 2 : Right | 3 : ExLeft | 4 : ExRight| 5 : Stop | 6 : Lost
+    ; changes are made to the motors based on LLIStateReg
     return
 ;###############################################################################
 
