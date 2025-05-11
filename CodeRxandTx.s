@@ -5,19 +5,19 @@
     CONFIG FOSC = INTIO67
     CONFIG WDTEN = OFF
     
-    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed
-    HighLvlStateReg	EQU	0x01
-    Code1		EQU	0x02
-    Code2		EQU	0x03
-    Code3		EQU	0x04
-    CodeCTR		EQU	0x05
-    RxSCRATCH		EQU	0x06
+    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed, Bit4: Recieving Message
+    HighLvlStateReg	EQU	0x01; Flag register for the fall through state machine
+    Code1		EQU	0x02; First message digit recieved
+    Code2		EQU	0x03; Second message digit recieved
+    Code3		EQU	0x04; Third message digit recieved
+    CodeCTR		EQU	0x05; Keeps count of digits recieved
+    RxSCRATCH		EQU	0x06; Used in Rx ISR to hold recieved byte
     SCRATCH		EQU	0x07
     WTEMP		EQU	0x08
-    followColor		EQU	0x09 ; Determines curren color being followed
-    Count1		EQU	0x0A
-    Count2		EQU	0x0B
-    Count3		EQU	0x0C
+    followColor		EQU	0x09; Determines curren color being followed
+    Count1		EQU	0x0A; used for delays and counting
+    Count2		EQU	0x0B; used for delays and counting
+    Count3		EQU	0x0C; used for delays and counting
     CLRCNT		EQU	0x0D; used to iterate over 3 colors in Calibration
     ADCONSEL		EQU	0x0E; used to determine which ADC channel to select
     THRESH3		EQU	0x0F; THRESH3 RGB : {R3, G3, B3}0x0F,0x10,0x11
@@ -42,12 +42,16 @@
     stopReg		EQU	0x36
     lowerClr		EQU	0x37; used in LineMapper
     SensorLine		EQU	0x38; used in LineMapper and LLI
+    PageCTR		EQU	0x39; used to count page block of 8 bytes when writing I2C
+    PageAddress		EQU	0x3A; used to point to current write address in I2C
 	
     ;state  bits--------------
     stateHome	EQU	0
     stateSelC	EQU	1
     stateCal	EQU	2
     stateRace	EQU	3
+    stateDiag	EQU	4
+    stateProg	EQU	5
     ;Constants to switch RGBs--------
     RED		EQU	1
     GREEN	EQU	2
@@ -60,6 +64,9 @@
     C7		EQU	01001101B;Rightmost sensor
     D3	        EQU     01011101B ; D3 AN23
     D4	        EQU     01100001B ; D4 AN24
+    ;Command bytes for I2C
+    WriteByte	EQU	10100000B
+    ReadByte	EQU	10100001B
     
     #include <xc.inc>
     #include "pic18f45k22.inc"
@@ -119,7 +126,7 @@ INIT:
     CLRF    LATD
     CLRF    ANSELD
     BSF	    ANSELD,4 ; Touch sensor pin
-    MOVLW   11000000B
+    MOVLW   11000011B
     MOVWF   TRISD ; set TRISD 6 AND 7 to 1; EUART automatical converts input and output mode where necessary
     
     ;115200 BaudRate
@@ -134,6 +141,15 @@ INIT:
     MOVWF   TXSTA2
     MOVLW   10010000B 
     MOVWF   RCSTA2
+    
+    ;Configuring I2C
+    MOVLW   34
+    MOVWF   SSP2ADD ; set baud rate to 115200
+    CLRF    SSP2STAT
+    MOVLW   00101000B
+    MOVWF   SSP2CON1
+    CLRF    SSP2CON2
+    CLRF    SSP2CON3
     
     ;Config Interupts 
     MOVLW   11000000B
@@ -253,7 +269,7 @@ End_Of_State_Cal:
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 STATE_RACE:
     BTFSS   HighLvlStateReg,stateRace
-    GOTO    Main
+    GOTO    STATE_DIAGNOSTICS
     
     BTFSC   systemUtilReg,2
     BRA	    DrivingState
@@ -273,6 +289,21 @@ STATE_RACE:
 	call	MotorControl
 End_Of_State_Race:
     call    Check_Code_Recieved
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+STATE_DIAGNOSTICS:
+    BTFSS   HighLvlStateReg,stateDiag
+    GOTO    STATE_PROGRAM
+End_Of_State_Diag:
+    call    Check_Code_Recieved
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+STATE_PROGRAM:
+    BTFSS   HighLvlStateReg,stateProg
+    GOTO    Main
+    MOVLW   10110110B
+    MOVWF   PORTA
+End_Of_State_Prog:
+    call    Check_Code_Recieved
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     GOTO    Main ; final loop catch statement
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
     
@@ -280,6 +311,8 @@ ISR:
     RETFIE
     
 RxISR:
+    BTFSC   systemUtilReg,4 ; check if message recieve mode been set
+    BRA	    MessageISR
     MOVWF   WTEMP; Save WREG value 
     MOVF    RCREG2,W
     MOVWF   RxSCRATCH
@@ -323,6 +356,26 @@ ThirdSymbol:
 End_Of_RxISR:
     MOVF    WTEMP,W ; Restore WREG
     RETFIE
+    
+MessageISR:
+    MOVFF	RCREG2,RxSCRATCH
+    MOVFF	RxSCRATCH,INDF2
+    INCF	FSR2
+    MOVLW	0x0A ; check if \n was recieved to terminate message
+    CPFSEQ	RxSCRATCH
+    BRA		End_Of_MessageISR
+    MOVLW	'5'
+    MOVWF	Code1
+    MOVLW	'1'
+    MOVWF	Code2
+    MOVLW	'3'
+    MOVWF	Code3
+    MOVLW	0
+    MOVWF	INDF2
+    BSF		systemUtilReg,0
+    BCF		systemUtilReg,4
+End_Of_MessageISR:
+    RETFIE
 
 ;########################SUB ROUTINE############################################
 Check_Code_Recieved:
@@ -347,7 +400,13 @@ Check_Code_Recieved:
     INCF    WREG  ; check for 3XX codes
     CPFSGT  SCRATCH
     GOTO    Race_codes
-    GOTO    Race_codes ; replace this line for checks to other codes
+    INCF    WREG  ; check for 4XX codes
+    CPFSGT  SCRATCH
+    GOTO    Diagnostics_codes
+    INCF    WREG  ; check for 5XX codes
+    CPFSGT  SCRATCH
+    GOTO    Program_codes
+    GOTO    Home_codes ; default to Home mode if non valid code recieved
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$    
 Home_codes:
     ;MARV transistion to Home, and responds with Home Mode code
@@ -570,6 +629,71 @@ End_Of_Race_Codes:
     call    TransmitMARVResponse
     GOTO    End_Of_Check_Code
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+Diagnostics_codes:
+    GOTO    End_Of_Check_Code
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+Program_codes:
+    MOVF	Code2,W
+    ADDLW	-0x30
+    MOVWF	SCRATCH
+    MOVLW	0
+    CPFSGT	SCRATCH
+    BRA		Set_To_Program_Mode
+    MOVF	Code3,W
+    ADDLW	-0x30
+    MOVWF	SCRATCH
+    MOVLW	0
+    CPFSGT	SCRATCH
+    BRA		SloganChangeRequest
+    MOVLW	2
+    CPFSGT	SCRATCH
+    BRA		ReplyWithSlogan
+    MOVLW	3
+    CPFSGT	SCRATCH
+    BRA		IndicateSloganRecieved
+    GOTO	End_Of_Check_Code
+SloganChangeRequest:
+    MOVLW	2
+    MOVWF	FSR2H
+    CLRF	FSR2L
+	
+    BSF		systemUtilReg,4 ; change all Rx receptions, to go to MessageISR
+	
+    MOVLW	SloganChangeAck
+    MOVWF	TBLPTRL,0
+    MOVLW	(SloganChangeAck>>8)
+    MOVWF	TBLPTRH,0
+    MOVLW	(SloganChangeAck>>16)
+    MOVWF	TBLPTRU,0
+    call	TransmitMARVResponse
+    GOTO	End_Of_Check_Code
+ReplyWithSlogan:
+    call	ReadFromEEPROM
+    call	MemoryToEUART
+    BRA		End_Of_Check_Code
+IndicateSloganRecieved:
+    MOVLW	SloganRecieved
+    MOVWF	TBLPTRL,0
+    MOVLW	(SloganRecieved>>8)
+    MOVWF	TBLPTRH,0
+    MOVLW	(SloganRecieved>>16)
+    MOVWF	TBLPTRU,0
+    call	TransmitMARVResponse
+    call	UpdateEEPROM
+    GOTO	End_Of_Check_Code
+Set_To_Program_Mode:
+    CLRF    HighLvlStateReg
+    BSF	    HighLvlStateReg,stateProg
+    
+    MOVLW   ProgramMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (ProgramMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (ProgramMode>>16)
+    MOVWF   TBLPTRU,0
+    call    TransmitMARVResponse
+    GOTO    End_Of_Check_Code
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 End_Of_Check_Code:
     return
     
@@ -589,6 +713,25 @@ Transmit:
     MOVFF   TABLAT, TXREG2
     BRA	    ReadString
 End_Of_TransmitResponse:
+    return
+;####################
+MemoryToEUART:
+    MOVLW   2
+    MOVWF   FSR2H
+    MOVLW   0
+    MOVWF   FSR2L
+TransmitFromMemory:
+    MOVFF   INDF2,SCRATCH
+    INCF    FSR2
+Wait_for_TX_readyMem:
+    BTFSS   TXSTA2,1,0	; Wait until TSR is empty
+    BRA     Wait_for_TX_readyMem
+    
+    MOVFF   SCRATCH,TXREG2
+    MOVLW   0x0A ; check for \n
+    CPFSEQ  SCRATCH
+    BRA	    TransmitFromMemory
+End_Of_MemoryToEUART:
     return
 ;#--------------------------END OF SUB ROUTINE----------------------------------
     
@@ -756,6 +899,18 @@ delay4ms:
     ;TODO: write delay sub routine for 4ms
     return
     
+Delay6ms:
+    MOVLW   100
+    MOVWF   Count1
+OuterLoop:
+    MOVLW   94
+    MOVWF   Count2
+InnerLoop:
+    DECFSZ  Count2
+    BRA	    InnerLoop
+    DECFSZ  Count1
+    BRA	    OuterLoop
+    return 
 ;#------------------------END OF DELAY SUB ROUTINES-----------------------------
     
 ;#########################RACE RELATED SUB ROUTINES#############################
@@ -1026,7 +1181,146 @@ MotorControl:;LLIStateReg bits | 0 : Straight | 1 : Left | 2 : Right | 3 : ExLef
     ; changes are made to the motors based on LLIStateReg
     return
 ;###############################################################################
+;---------------------SUB ROUTINES FOR I2C--------------------------------------
+UpdateEEPROM:
+    MOVLW   2
+    MOVWF   FSR2H
+    MOVLW   0
+    MOVWF   FSR2L ; point to the top of bank 2
+    MOVLW   0
+    MOVWF   PageAddress
+PageLoop:
+    MOVLW   8
+    MOVWF   PageCTR
+    TransmitionStart:
+	call    InitiateStartCondition
+	MOVLW   WriteByte
+	MOVWF   SCRATCH
+	call    TransmitByte
+	MOVFF   PageAddress, SCRATCH
+	call    TransmitByte
+    
+    TransmitSloganFromMem:
+	MOVF    POSTINC2,W
+	MOVWF   SCRATCH
+	call    TransmitByte
 
+	INCF    PageAddress
+	DECFSZ  PageCTR
+	BRA	StillInPage
+	BRA	TransmitStop
+    StillInPage:
+	MOVLW   0
+	CPFSEQ  INDF2 ; if \0 is reached in memory 
+	BRA	TransmitSloganFromMem
+	
+TransmitStop:
+    call    InitiateStopCondition
+    call    Delay6ms
+    MOVLW   0
+    CPFSEQ  INDF2 ; if \0 is reached in memory
+    BRA	    PageLoop
+    return
+;-------------------------------------------------------------------------------    
+InitiateStartCondition:
+waitForEmptyBufferToStart:
+    BTFSC   SSP2STAT, 0
+    BRA	    waitForEmptyBufferToStart
+    BCF	    SSP2IF
+    BSF	    SSP2CON2,0 ; generate start
+waitForStart:
+    BTFSC   SSP2CON2,0
+    BRA	    waitForStart
+    return
+    
+InitiateStopCondition:
+waitForEmptyBufferToStop:
+    BTFSC   SSP2STAT, 0
+    BRA	    waitForEmptyBufferToStop
+    
+    BCF	    SSP2IF
+    BSF	    SSP2CON2, 2 ; generate stop condition 
+waitForStop:
+    BTFSC   SSP2CON2, 2
+    BRA	    waitForStop
+    return
+    
+InitiateRestartCondition:
+waitForEmptyBufferToRestart:
+    BTFSC   SSP2STAT, 0
+    BRA	    waitForEmptyBufferToRestart
+    
+    BCF	    SSP2IF
+    BSF	    SSP2CON2, 1 ; generate restart condition 
+waitForRestart:
+    BTFSC   SSP2CON2, 1
+    BRA	    waitForRestart
+    return
+;-------------------------------------------------------------------------------
+TransmitByte:
+    WaitForEmptyBuf:
+    BTFSC   SSP2STAT,0
+    BRA	    WaitForEmptyBuf
+    
+    MOVFF   SCRATCH, SSP2BUF
+    BCF	    SSP2IF
+    WaitFor9thClockGen:
+    BTFSS   SSP2IF
+    BRA	    WaitFor9thClockGen
+    BCF	    SSP2IF
+    return   
+    
+ReadFromEEPROM:
+    MOVLW   2
+    MOVWF   FSR2H
+    MOVLW   0
+    MOVWF   FSR2L ; point to the top of bank 2
+    MOVLW   0
+    
+    call    InitiateStartCondition
+    MOVLW   WriteByte
+    MOVWF   SCRATCH
+    call    TransmitByte
+    MOVLW   0 ; point EEPROM PTR to top 
+    MOVWF   SCRATCH
+    call    TransmitByte
+    call    InitiateRestartCondition
+    MOVLW   ReadByte
+    MOVWF   SCRATCH
+    call    TransmitByte
+LoopReadFromEEPROM:
+    BSF	    SSP2CON2,3 ; enable recieve
+    BCF	    SSP2IF
+WaitForReceptionFinish:
+    BTFSS   SSP2IF
+    BRA	    WaitForReceptionFinish
+    BCF	    SSP2IF
+    MOVFF   SSP2BUF, SCRATCH
+    MOVFF   SCRATCH, POSTINC2
+    MOVLW   0x0A ; check for \n
+    CPFSEQ  SCRATCH
+    BRA	    Acknowledge
+    BRA	    Nacknowledge
+Acknowledge:
+    BCF	    SSP2CON2, 5 ; set the ack bit to 0
+    BSF	    SSP2CON2, 4 ; initiate ack sequence 
+    BCF	    SSP2IF
+    BRA	    WaitForAckToFinish
+Nacknowledge:
+    BSF	    SSP2CON2, 5 ; set the ack bit to 1
+    BSF	    SSP2CON2, 4 ; initiate ack sequence
+    BCF	    SSP2IF
+WaitForAckToFinish:
+    BTFSS   SSP2IF
+    BRA	    WaitForAckToFinish
+    
+    BTFSS   SSP2CON2, 5 ; if NACK was sent, skip to stop condition 
+    BRA	    LoopReadFromEEPROM
+TransmitStop2:
+    call    InitiateStopCondition
+    return
+;###############################################################################
+;------------------------END OF I2C SUB ROUTINES--------------------------------
     
 ; Code responses for the MARV to send, are stored in a table in Program memory
 ORG 0x5000 
@@ -1048,5 +1342,6 @@ RaceBlack:		DB	'#341',0x0D,0x0A,0x00
 DiagnostMode:		DB	'#401',0x0D,0x0A,0x00
 ProgramMode:		DB	'#501',0x0D,0x0A,0x00
 SloganChangeAck:	DB	'#511',0x0D,0x0A,0x00
-
+SloganRecieved:		DB	'#514',0x0D,0x0A,0x00
+		
     END   
