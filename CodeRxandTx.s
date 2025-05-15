@@ -931,7 +931,7 @@ End_Of_Idle:
     return
     
 Touchsensor:
-    MOVLW	60
+    MOVLW	120
     MOVWF	TouchThresh
     BCF		TRISD,4 ;Make touch pin output
     BSF		PORTD,3 ; Charge Secondary line
