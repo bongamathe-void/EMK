@@ -18,6 +18,7 @@
                    displayName="Source Files"
                    projectFiles="true">
       <itemPath>/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/CodeRxandTx.s</itemPath>
+      <itemPath>/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/Diag_Test.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <projectmakefile>Makefile</projectmakefile>
@@ -63,6 +64,10 @@
         <makeCustomizationEnableLongLines>false</makeCustomizationEnableLongLines>
         <makeCustomizationNormalizeHexFile>false</makeCustomizationNormalizeHexFile>
       </makeCustomizationType>
+      <item path="/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/Diag_Test.s"
+            ex="true"
+            overriding="false">
+      </item>
       <Simulator>
         <property key="codecoverage.enabled" value="Disable"/>
         <property key="codecoverage.enableoutputtofile" value="false"/>

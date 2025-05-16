@@ -1,3 +1,6 @@
+
+
+
     title "Testing idea of state machine with UART code comm"
     
     PROCESSOR 18F45K22
@@ -44,7 +47,7 @@
     SensorLine		EQU	0x38; used in LineMapper and LLI
     PageCTR		EQU	0x39; used to count page block of 8 bytes when writing I2C
     PageAddress		EQU	0x3A; used to point to current write address in I2C
-    DiagStateReg	EQU     0x3B; used to determine what diagnostic state
+    DiagStateReg	EQU     0x3B
 	
     ;state  bits--------------
     stateHome	EQU	0
@@ -53,11 +56,6 @@
     stateRace	EQU	3
     stateDiag	EQU	4
     stateProg	EQU	5
-    ;Diagnostics bits---------
-    stateForward EQU	0
-    stateLeft	EQU	1
-    stateRight	EQU	2
-    stateStop	EQU	3
     ;Constants to switch RGBs--------
     RED		EQU	1
     GREEN	EQU	2
@@ -73,6 +71,16 @@
     ;Command bytes for I2C
     WriteByte	EQU	10100000B
     ReadByte	EQU	10100001B
+	
+    PA		EQU	00010001B
+    PB		EQU	00010010B
+		
+		
+    ;state Diagnostics bits--------------
+    stateSensor	    EQU	0
+    stateForward	EQU 1
+    stateLeft	EQU	2
+    stateRight	EQU	3
     
     #include <xc.inc>
     #include "pic18f45k22.inc"
@@ -172,6 +180,25 @@ INIT:
     CLRF    systemUtilReg
     CLRF    CLRCNT
     GOTO    Main
+    
+    ;Configuration of timers
+	MOVLW	00000010B
+	MOVWF	T2CON
+	MOVLW	249
+	MOVWF	PR2 ; PWM FREQUENCY IS SET TO 1KHz
+	CLRF	TMR2
+	
+	;Configuration of CCP
+	MOVLW	00001100B
+	MOVWF	CCP1CON
+	MOVWF	CCP2CON
+	MOVLW	0
+	MOVWF	CCPR1L
+	MOVWF	CCPR2L
+	CLRF	CCPTMRS0
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
     
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
 Main:
@@ -300,8 +327,12 @@ STATE_DIAGNOSTICS:
     BTFSS   HighLvlStateReg,stateDiag
     GOTO    STATE_PROGRAM
     
-    MOVLW   00101110B
+    
+    MOVLW   00110010B
     MOVWF   PORTA
+    
+    BTFSC   DiagStateReg,stateSensor
+    CALL    SensorTest
     
     BTFSC   DiagStateReg,stateForward
     CALL    DiagForward
@@ -312,8 +343,6 @@ STATE_DIAGNOSTICS:
     BTFSC   DiagStateReg,stateRight
     CALL    DiagRight
     
-    BTFSC   DiagStateReg,stateStop
-    CALL    DiagStop
     
 End_Of_State_Diag:
     call    Check_Code_Recieved
@@ -652,63 +681,106 @@ End_Of_Race_Codes:
     GOTO    End_Of_Check_Code
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 Diagnostics_codes:
+    
     MOVF    Code2,W
     ADDLW   -0x30           ; W = Code2 - '0'
     MOVWF   SCRATCH
+
     MOVLW   0
     CPFSGT  SCRATCH         ; if SCRATCH <= 0 ? it's 400
     BRA     Set_To_Diag_Mode
+
     MOVLW   1
     CPFSGT  SCRATCH         ; if SCRATCH <= 1 ? it's 410
     BRA     Run_Sensor_Test
+
     MOVLW   2
     CPFSGT  SCRATCH         ; 420
     BRA     Run_Forward_Test
+
     MOVLW   3
     CPFSGT  SCRATCH         ; 430
     BRA     Run_Left_Test
+
     MOVLW   4
     CPFSGT  SCRATCH         ; 440
     BRA     Run_Right_Test
-    MOVLW   5
-    CPFSGT  SCRATCH
-    BRA	    Run_Stop_Test
-    BRA	    End_Of_Diagnostics_Codes
-    Set_To_Diag_Mode:
-	CLRF    HighLvlStateReg
-	BSF     HighLvlStateReg,stateDiag
-	CLRF    DiagStateReg
-	BSF	DiagStateReg,stateStop ; Make motors stop by deafault when Diagnostics button pressed
-	BRA	End_Of_Diagnostics_Codes
-    Run_Sensor_Test:
-	call    CurrentReading
-	call    DetermineColor
-	call	TransmitSensorData
-	GOTO    End_Of_Check_Code
-    Run_Forward_Test:
-	CLRF    DiagStateReg
-	BSF	DiagStateReg,stateForward
-	BRA	End_Of_Diagnostics_Codes
-    Run_Left_Test:
-	CLRF    DiagStateReg
-	BSF	DiagStateReg,stateLeft
-	BRA	End_Of_Diagnostics_Codes
-    Run_Right_Test:
-	CLRF    DiagStateReg
-	BSF	DiagStateReg,stateRight
-	BRA	End_Of_Diagnostics_Codes
-    Run_Stop_Test:
-	CLRF    DiagStateReg
-	BSF	DiagStateReg,stateStop
-	BRA	End_Of_Diagnostics_Codes
-End_Of_Diagnostics_Codes:
-    MOVLW   DiagnosticMode
+
+    GOTO    End_Of_Diagnostics_Codes
+
+; ??????????????
+Set_To_Diag_Mode:
+    MOVLW   DiagnostMode
     MOVWF   TBLPTRL,0
-    MOVLW   (DiagnosticMode>>8)
+    MOVLW   (DiagnostMode>>8)
     MOVWF   TBLPTRH,0
-    MOVLW   (DiagnosticMode>>16)
+    MOVLW   (DiagnostMode>>16)
     MOVWF   TBLPTRU,0
+
+    CLRF    HighLvlStateReg
+    BSF     HighLvlStateReg,stateDiag
+    BRA     Send_Diag_Ack
+
+Run_Sensor_Test:
+  
+    MOVLW   DiagnostMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (DiagnostMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (DiagnostMode>>16)
+    MOVWF   TBLPTRU,0
+    
+    
+    CLRF    DiagStateReg
+    BSF     DiagStateReg,stateSensor
+    BRA     Send_Diag_Ack
+    
+
+Run_Forward_Test:
+    call    DiagForward
+    
+    MOVLW   DiagnostMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (DiagnostMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (DiagnostMode>>16)
+    MOVWF   TBLPTRU,0
+    
+    CLRF    DiagStateReg
+    BSF     DiagStateReg,stateForward
+    BRA     Send_Diag_Ack
+
+Run_Left_Test:
+    call    DiagLeft
+    MOVLW   DiagnostMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (DiagnostMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (DiagnostMode>>16)
+    MOVWF   TBLPTRU,0
+    
+    CLRF    DiagStateReg
+    BSF     DiagStateReg,stateLeft
+    BRA     Send_Diag_Ack
+
+Run_Right_Test:
+    call    DiagRight
+    
+    MOVLW   DiagnostMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (DiagnostMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (DiagnostMode>>16)
+    MOVWF   TBLPTRU,0
+    
+    CLRF    DiagStateReg
+    BSF     DiagStateReg,stateRight
+    BRA     Send_Diag_Ack
+    ; fall through to send
+Send_Diag_Ack:
     call    TransmitMARVResponse
+
+End_Of_Diagnostics_Codes:
     GOTO    End_Of_Check_Code
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 Program_codes:
@@ -812,47 +884,6 @@ Wait_for_TX_readyMem:
     BRA	    TransmitFromMemory
 End_Of_MemoryToEUART:
     return
-    
- ;---------------SUB ROUTINE FOR SENSOR DATA DIAGNOSTICS-------------------------
-TransmitSensorData:
-    LFSR    2,ColorReg3
-    MOVLW   6
-    MOVWF   Count1
-    
-    MOVLW   '*'
-    MOVWF   SCRATCH
-    BRA	    Wait_for_TX_readySens
-ReadColorData:
-    MOVFF   POSTINC2, SCRATCH
-    MOVLW   0x30
-    ADDWF   SCRATCH
-Wait_for_TX_readySens:
-    BTFSS   TXSTA2,1,0  ; Wait until TSR is empty
-    BRA	    Wait_for_TX_readySens
-    
-    MOVFF   SCRATCH,TXREG2
-    DECFSZ  Count1
-    BRA	    ReadColorData
-    
-    MOVLW   0x0D ; \r
-    MOVWF   SCRATCH
-Wait_for_TX_readyCarridge:
-    BTFSS   TXSTA2,1,0  ; Wait until TSR is empty
-    BRA	    Wait_for_TX_readyCarridge
-    
-    MOVFF   SCRATCH, TXREG2
-    
-    MOVLW   0x0A ; \n
-    MOVWF   SCRATCH
-Wait_for_TX_newLine:
-    BTFSS   TXSTA2,1,0  ; Wait until TSR is empty
-    BRA	    Wait_for_TX_newLine
-    
-    MOVFF   SCRATCH, TXREG2
-    
-End_Of_TransmitSensorData:
-    return
-;-------------------------------------------------------------------------------
 ;#--------------------------END OF SUB ROUTINE----------------------------------
     
 ;########################CALIBRATION SUB ROUTINES################################
@@ -1039,6 +1070,17 @@ Idle:; Idle is also called when moving the MARV to home mode, Idle is called to
     BTFSS	HighLvlStateReg,stateRace 
     BRA		End_Of_Idle
     ; TODO : Include code, to switch off PWMs 
+    CLRF	CCP1CON
+    CLRF	CCP2CON
+	
+	MOVLW	0
+	MOVWF	CCPR1L
+	MOVWF	CCPR2L
+	BCF	TMR2ON ; stops timer
+	CLRF	TMR2 ; resets the timer register
+	BCF	PORTC,1
+	BCF	PORTC,2
+	
     BCF		systemUtilReg,2 ; indicate that MARV is Idle, once again
     BCF		systemUtilReg,3
     call	Touchsensor
@@ -1047,11 +1089,21 @@ Idle:; Idle is also called when moving the MARV to home mode, Idle is called to
     BRA		End_Of_Idle
     BSF		systemUtilReg,2
     ;TODO	Include code to switch on PWMs
+    MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	MOVLW	10001100B
+	MOVWF	CCP1CON
+	MOVWF	CCP2CON
+	MOVLW	50
+	MOVWF	CCPR1L ; start motorL at 50%
+	MOVWF	CCPR2L ; start motorR at 50%
+	BSF	TMR2ON ; start the timer
 End_Of_Idle:
     return
     
 Touchsensor:
-    MOVLW	120
+    MOVLW	60
     MOVWF	TouchThresh
     BCF		TRISD,4 ;Make touch pin output
     BSF		PORTD,3 ; Charge Secondary line
@@ -1115,7 +1167,6 @@ CurrentReading:
 	ADDLW	2
 	MOVWF	FSR1L;point to blue register
 	call	read5Sensors
-	CLRF	LATE
     return
     
 read5Sensors:
@@ -1182,58 +1233,7 @@ DtrClrHelper:
     MOVLW	2
     SUBWF	INDF1,W
     CPFSLT	INDF0
-    BSF		SCRATCH,2; FSR0 ends on current Blue
-    
-    MOVF	SCRATCH,W
-    SUBLW	3
-    BZ		ResolveRedGreen
-    MOVF	SCRATCH,W
-    SUBLW	5
-    BZ		ResolveRedBlue
-    MOVF	SCRATCH,W
-    SUBLW	6
-    BZ		ResolveGreenBlue
-    BRA		End_Of_DtrClrHelper
-
-ResolveRedGreen:
-    CLRF	SCRATCH
-    DECF	FSR0L ; Make FSR0 point to current Green
-    MOVF	INDF0,W ; Move current green to WREG
-    DECF	FSR0L ; Make FSR0 point to current Red
-    CPFSGT	INDF0 ; currentRed > currentGreen ? 
-    BRA		GreenWinRed
-    RedWinGreen:
-	BSF		SCRATCH,0
-	BRA		End_Of_DtrClrHelper
-    GreenWinRed:
-	BSF		SCRATCH,1
-	BRA		End_Of_DtrClrHelper
-ResolveRedBlue:
-    CLRF	SCRATCH
-    MOVF	INDF0,W ; Move current Blue to WREG
-    DECF	FSR0L ; FSR0 points to Green
-    DECF	FSR0L ; FSR0 point to Red
-    CPFSGT	INDF0 ; currentRed > currentBlue ? 
-    BRA		BlueWinRed
-    RedWinBlue:
-	BSF		SCRATCH,0
-	BRA		End_Of_DtrClrHelper
-    BlueWinRed:
-	BSF		SCRATCH,2
-	BRA		End_Of_DtrClrHelper
-ResolveGreenBlue:
-    CLRF	SCRATCH
-    MOVF	INDF0,W ; Move current Blue to WREG
-    DECF	FSR0L ; FSR0 points to current Green
-    CPFSGT	INDF0 ; currentGreen > currentBlue
-    BRA		BlueWinGreen
-    GreenWinBlue:
-	BSF		SCRATCH,1
-	BRA		End_Of_DtrClrHelper
-    BlueWinGreen:
-	BSF		SCRATCH,2
-	BRA		End_Of_DtrClrHelper
-End_Of_DtrClrHelper:
+    BSF		SCRATCH,2
     MOVF	SCRATCH,W
     return
     
@@ -1351,7 +1351,136 @@ endOfLLI:
     
 MotorControl:;LLIStateReg bits | 0 : Straight | 1 : Left | 2 : Right | 3 : ExLeft | 4 : ExRight| 5 : Stop | 6 : Lost
     ; changes are made to the motors based on LLIStateReg
+    BTFSC LLIStateReg,0
+    GOTO MC_STRAIGHT
+    
+    BTFSC LLIStateReg,1
+    GOTO MC_LEFT
+    
+    BTFSC LLIStateReg,2
+    GOTO MC_RIGHT
+    
+    BTFSC LLIStateReg,3
+    GOTO MC_ExLEFT
+    
+    BTFSC LLIStateReg,4
+    GOTO MC_ExRIGHT
+    
+    BTFSC LLIStateReg,5
+    GOTO MC_STOP
+    
+    BTFSC LLIStateReg,6
+    GOTO MC_LOST
+    
+MC_STRAIGHT:
+    
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	BCF	PORTD,5
+	BCF	PORTD,2
+	MOVLW	50 ; set MotorR and MotorL to 50%
+	MOVWF	CCPR1L
+	MOVWF	CCPR2L
+	
+    GOTO endofMotorControl
+    
+MC_LEFT:
+    
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	BCF	PORTD,5
+	BCF	PORTD,2
+	
+    LeftStateMotorR:
+	MOVLW	60
+	CPFSLT	CCPR1L
+	BRA	LeftStateMotorL
+	MOVLW	5
+	ADDWF	CCPR1L,f
+    LeftStateMotorL:
+	MOVLW	20
+	CPFSGT	CCPR2L
+	BRA	STATE_RACE
+	MOVLW	5
+	SUBWF	CCPR2L,f
+	
+	
+    GOTO endofMotorControl
+    
+MC_RIGHT:
+    
+    MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	BCF	PORTD,5
+	BCF	PORTD,2
+	
+    RightStateMotorR:
+	MOVLW	20
+	CPFSGT	CCPR1L
+	BRA	RightStateMotorL
+	MOVLW	5
+	SUBWF	CCPR1L,f
+    RightStateMotorL:
+	MOVLW	60
+	CPFSLT	CCPR2L
+	BRA	STATE_RACE
+	MOVLW	5
+	ADDWF	CCPR2L, f
+	
+    GOTO endofMotorControl
+    
+MC_ExLEFT:
+    
+    ExLeftStateMotorR:
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	BCF	PORTD,5
+	MOVLW	60
+	CPFSLT	CCPR1L
+	BRA	ExLeftStateMotorL
+	MOVLW	10
+	ADDWF	CCPR1L,f
+    ExLeftStateMotorL:
+	MOVLW	PB
+	MOVWF	PSTR2CON
+	BCF	PORTC,1
+	MOVLW	40
+	CPFSLT	CCPR2L
+	BRA	STATE_RACE
+	MOVLW	10
+	ADDWF	CCPR2L,f
+	
+    GOTO endofMotorControl
+    
+MC_ExRIGHT:
+    
+    ExRightStateMotorR:
+	MOVLW	0
+	CPFSGT	CCPR1L
+	BRA	ExRightStateMotorL
+	MOVLW	10
+	SUBWF	CCPR1L,f
+    ExRightStateMotorL:
+	MOVLW	60
+	CPFSLT	CCPR2L
+	BRA	STATE_RACE
+	MOVLW	10
+	ADDWF	CCPR2L, f
+	
+    GOTO endofMotorControl
+    
+MC_STOP:
+    GOTO IdleState
+    
+MC_LOST:
+    GOTO MC_STRAIGHT
+      
+endofMotorControl:
     return
+
 ;###############################################################################
 ;---------------------SUB ROUTINES FOR I2C--------------------------------------
 UpdateEEPROM:
@@ -1494,19 +1623,184 @@ TransmitStop2:
 ;###############################################################################
 ;------------------------END OF I2C SUB ROUTINES--------------------------------
     
-;------------------------DIAGNOSTICS SUB ROUTINES-------------------------------
+    
+;###############################################################################
+;------------------------Diagnostic Helpers-------------------------------------
+    
+
+SensorTest:
+    call    CurrentReading
+    call    DetermineColor
+    call    SendAllSensorColors
+   
+    return
+
+
 DiagForward:
-    return 
-    
+    CALL MC_STRAIGHT
+WaitDiagF:
+    BTFSS   PIR3,5             ; wait until EUART has a byte
+    BRA     WaitDiagF
+    MOVF    RCREG2,W
+    CPFSEQ  'F'
+    BRA     WaitDiagF
+    call    DIAG_IDLE             ; stop motors
+    return
+
+; ?????????????????????????
+; turn left until ?L? received
 DiagLeft:
+    CALL DIAG_MC_LEFT
+TurnLeftLoop:
+    BTFSS   PIR3,5
+    BRA     TurnLeftLoop
+    MOVF    RCREG2,W
+    CPFSEQ  'L'
+    BRA     TurnLeftLoop
+    call    DIAG_IDLE
     return
-    
+
+; ?????????????????????????
+; turn right until ?R? received
 DiagRight:
+    CALL DIAG_MC_RIGHT
+TurnRightLoop:
+    BTFSS   PIR3,5
+    BRA     TurnRightLoop
+    MOVF    RCREG2,W
+    CPFSEQ  'R'
+    BRA     TurnRightLoop
+    call    DIAG_IDLE
     return
+
     
-DiagStop:
-    return
-;-------------------------------------------------------------------------------
+DIAG_IDLE:
+	CLRF	CCP1CON
+	CLRF	CCP2CON
+	MOVLW	0
+	MOVWF	CCPR1L
+	MOVWF	CCPR2L
+	BCF	TMR2ON ; stops timer
+	CLRF	TMR2 ; resets the timer register
+	BCF	PORTC,1
+	BCF	PORTC,2
+	return
+    
+DIAG_MC_LEFT:
+    
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	BCF	PORTD,5
+	BCF	PORTD,2
+	MOVLW   60           
+	MOVWF   CCPR1L
+	MOVLW   20         
+	MOVWF   CCPR2L
+	BSF     T2CON,2       
+	return
+
+DIAG_MC_RIGHT:
+    
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	MOVWF	PSTR2CON
+	BCF	PORTD,5
+	BCF	PORTD,2
+	MOVLW   20           
+	MOVWF   CCPR1L
+	MOVLW   60           
+	MOVWF   CCPR2L
+	BSF     T2CON,2        
+	return
+
+	
+;Transimits ASCII Chars of each individual sensor	
+SendAllSensorColors:
+    ; Sensor 3
+    MOVF    ColorReg3, W
+    CALL    MapColorToASCII
+    CALL    EUSART_SendChar
+
+    ; Sensor 4
+    MOVF    ColorReg4, W
+    CALL    MapColorToASCII
+    CALL    EUSART_SendChar
+
+    ; Sensor 5
+    MOVF    ColorReg5, W
+    CALL    MapColorToASCII
+    CALL    EUSART_SendChar
+
+    ; Sensor 6
+    MOVF    ColorReg6, W
+    CALL    MapColorToASCII
+    CALL    EUSART_SendChar
+
+    ; Sensor 7
+    MOVF    ColorReg7, W
+    CALL    MapColorToASCII
+    CALL    EUSART_SendChar
+
+    ;Clear
+    MOVLW   0x0D
+    CALL    EUSART_SendChar
+    MOVLW   0x0A
+    CALL    EUSART_SendChar
+
+    RETURN
+
+
+MapColorToASCII:
+    MOVWF   SCRATCH       ;Register to save the ColorReg ting
+
+    ;? WHITE == 7
+    MOVF    SCRATCH, W
+    SUBLW   7
+    BTFSC   STATUS, 2
+    MOVLW   'W'
+    RETURN
+
+    ;? BLACK == 0
+    MOVF    SCRATCH, W
+    SUBLW   0
+    BTFSC   STATUS, 2
+    MOVLW   'K'
+    RETURN
+
+    ;? RED == 1
+    MOVF    SCRATCH, W
+    SUBLW   1
+    BTFSC   STATUS, 2
+    MOVLW   'R'
+    RETURN
+
+    ;? GREEN == 2
+    MOVF    SCRATCH, W
+    SUBLW   2
+    BTFSC   STATUS, 2
+    MOVLW   'G'
+    RETURN
+
+    ;? BLUE == 4
+    MOVF    SCRATCH, W
+    SUBLW   4
+    BTFSC   STATUS, 2
+    MOVLW   'B'
+    RETURN
+
+    ;? default
+    MOVLW   '?'
+    RETURN
+
+
+EUSART_SendChar:
+ ;Transmit the color letter   
+WaitTX:
+    BTFSS   TXSTA2, 1    
+    BRA     WaitTX
+    MOVWF   TXREG2
+    RETURN
     
 ; Code responses for the MARV to send, are stored in a table in Program memory
 ORG 0x5000 
@@ -1525,7 +1819,11 @@ RaceRed:		DB	'#311',0x0D,0x0A,0x00
 RaceGreen:		DB	'#321',0x0D,0x0A,0x00
 RaceBlue:		DB	'#331',0x0D,0x0A,0x00
 RaceBlack:		DB	'#341',0x0D,0x0A,0x00
-DiagnosticMode:		DB	'#401',0x0D,0x0A,0x00
+DiagnostMode:		DB	'#401',0x0D,0x0A,0x00
+;DiagSensorAck:		DB	'#411',0x0D,0x0A,0x00  
+;DiagForwardAck:		DB	'#421',0x0D,0x0A,0x00  
+;DiagLeftAck:		DB	'#431',0x0D,0x0A,0x00  
+;DiagRightAck:		DB	'#441',0x0D,0x0A,0x00  	
 ProgramMode:		DB	'#501',0x0D,0x0A,0x00
 SloganChangeAck:	DB	'#511',0x0D,0x0A,0x00
 SloganRecieved:		DB	'#514',0x0D,0x0A,0x00
