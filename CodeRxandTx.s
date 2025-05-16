@@ -5,7 +5,8 @@
     CONFIG FOSC = INTIO67
     CONFIG WDTEN = OFF
     
-    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed, Bit4: Recieving Message
+    systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed, Bit4: Recieving Message,
+				    ; Bit5 : Motors are moving
     HighLvlStateReg	EQU	0x01; Flag register for the fall through state machine
     Code1		EQU	0x02; First message digit recieved
     Code2		EQU	0x03; Second message digit recieved
@@ -73,6 +74,10 @@
     ;Command bytes for I2C
     WriteByte	EQU	10100000B
     ReadByte	EQU	10100001B
+	
+    ;Steering Constants
+    PA		EQU	00010001B
+    PB		EQU	00010010B
     
     #include <xc.inc>
     #include "pic18f45k22.inc"
@@ -164,7 +169,24 @@ INIT:
     MOVWF   PIE3
     CLRF    PIR3
     
-    ;Config ADC
+    ;Configuration of timers
+    MOVLW	00000010B
+    MOVWF	T2CON
+    MOVLW	249
+    MOVWF	PR2 ; PWM FREQUENCY IS SET TO 1KHz
+    CLRF	TMR2
+    
+    ;Configuration of CCP
+    MOVLW	00001100B
+    MOVWF	CCP1CON
+    MOVWF	CCP2CON
+    MOVLW	0
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    CLRF	CCPTMRS0
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
     
     MOVLB   0x00
     CLRF    HighLvlStateReg
@@ -1496,15 +1518,83 @@ TransmitStop2:
     
 ;------------------------DIAGNOSTICS SUB ROUTINES-------------------------------
 DiagForward:
+    BTFSS	systemUtilReg,5
+    BRA		MotorSetUpF
+    BRA		ForwardConfig
+MotorSetUpF:
+    MOVLW	00001100B
+    MOVWF	CCP1CON
+    MOVWF	CCP2CON
+    BSF		systemUtilReg,5
+ForwardConfig:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    MOVLW	75; set MotorR and MotorL to 50%
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BSF		TMR2ON
     return 
     
 DiagLeft:
+    BTFSS	systemUtilReg,5
+    BRA		MotorSetUpL
+    BRA		LeftConfig
+MotorSetUpL:
+    MOVLW	00001100B
+    MOVWF	CCP1CON
+    MOVWF	CCP2CON
+    BSF		systemUtilReg,5
+LeftConfig:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    BCF		PORTD,5
+    MOVLW	PB
+    MOVWF	PSTR2CON
+    BCF		PORTC,1
+    MOVLW	75           
+    MOVWF	CCPR1L
+    MOVLW	38         
+    MOVWF	CCPR2L
+    BSF		TMR2ON   
     return
     
 DiagRight:
+    BTFSS	systemUtilReg,5
+    BRA		MotorSetUpR
+    BRA		RightConfig
+MotorSetUpR:
+    MOVLW	00001100B
+    MOVWF	CCP1CON
+    MOVWF	CCP2CON
+    BSF		systemUtilReg,5
+RightConfig:
+    MOVLW	PB
+    MOVWF	PSTR1CON
+    BCF		PORTC,2
+    MOVLW	PA
+    MOVWF	PSTR2CON
+    BCF		PORTD,2
+    MOVLW	38
+    MOVWF	CCPR1L
+    MOVLW	75
+    MOVWF	CCPR2L
+    BSF		TMR2ON
     return
     
 DiagStop:
+    CLRF	CCP1CON
+    CLRF	CCP2CON
+    MOVLW	0
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BCF		TMR2ON ; stops timer
+    CLRF	TMR2 ; resets the timer register
+    BCF		PORTC,1
+    BCF		PORTC,2
+    BCF		systemUtilReg,5
     return
 ;-------------------------------------------------------------------------------
     
