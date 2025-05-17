@@ -67,6 +67,12 @@
       <item path="/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/Diag_Test.s"
             ex="true"
             overriding="false">
+        <pic-as-assembler>
+        </pic-as-assembler>
+        <pic-as-global>
+        </pic-as-global>
+        <pic-as-linker>
+        </pic-as-linker>
       </item>
       <Simulator>
         <property key="codecoverage.enabled" value="Disable"/>

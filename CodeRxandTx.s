@@ -6,7 +6,7 @@
     CONFIG WDTEN = OFF
     
     systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed, Bit4: Recieving Message,
-				    ; Bit5 : Motors are moving
+				    ; Bit5 : Motors are moving, Bit6 : offlineFlag
     HighLvlStateReg	EQU	0x01; Flag register for the fall through state machine
     Code1		EQU	0x02; First message digit recieved
     Code2		EQU	0x03; Second message digit recieved
@@ -46,6 +46,8 @@
     PageCTR		EQU	0x39; used to count page block of 8 bytes when writing I2C
     PageAddress		EQU	0x3A; used to point to current write address in I2C
     DiagStateReg	EQU     0x3B; used to determine what diagnostic state
+    HighLvlStateReg2	EQU	0x3C; Bit0: TransitionState, Bit1 : offline home, Bit2 : offline SelectColor, Bit3 : offline Calibration, 
+				    ; Bit4 : offline Race
 	
     ;state  bits--------------
     stateHome	EQU	0
@@ -54,6 +56,12 @@
     stateRace	EQU	3
     stateDiag	EQU	4
     stateProg	EQU	5
+    ;offline state bits-------
+    trans	EQU	0
+    offlineHome	EQU	1
+    offlineSelC	EQU	2
+    offlineCal	EQU	3
+    offlineRace	EQU	4
     ;Diagnostics bits---------
     stateForward EQU	0
     stateLeft	EQU	1
@@ -163,7 +171,9 @@ INIT:
     CLRF    SSP2CON3
     
     ;Config Interupts 
-    MOVLW   11000000B
+    MOVLW   10000001B
+    MOVWF   INTCON2
+    MOVLW   11010000B
     MOVWF   INTCON
     MOVLW   00100000B ; RC2IE 
     MOVWF   PIE3
@@ -189,6 +199,7 @@ INIT:
     MOVWF	PSTR2CON
     
     MOVLB   0x00
+    CLRF    HighLvlStateReg2
     CLRF    HighLvlStateReg
     BSF	    HighLvlStateReg,stateRace
     CLRF    systemUtilReg
@@ -342,16 +353,248 @@ End_Of_State_Diag:
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 STATE_PROGRAM:
     BTFSS   HighLvlStateReg,stateProg
-    GOTO    Main
+    GOTO    STATE_TRANS
     MOVLW   10110110B
     MOVWF   PORTA
 End_Of_State_Prog:
     call    Check_Code_Recieved
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+STATE_TRANS:
+    BTFSS   HighLvlStateReg2,trans
+    GOTO    OFFLINE_HOME
+    
+    MOVLW   11100010B
+    MOVWF   PORTA
+    
+    BTFSC		systemUtilReg,6
+    BRA			OfflineFlagSet
+    OfflineFlagClear:
+	BCF		PORTB,2
+	BRA		CheckOnlineFlagChange
+    OfflineFlagSet:
+	BSF		PORTB,2
+    
+CheckOnlineFlagChange:
+    BCF		systemUtilReg,3
+    call	Touchsensor
+    call	Touchsensor
+    BTFSS	systemUtilReg,3 ; touch sensed
+    BRA		End_Of_State_Trans
+    ToggleOfflineFlag:
+	BCF		systemUtilReg,3 ; acknowledge touch
+	BTG		systemUtilReg,6 ; toggle flag
+	call		Delay333
+	
+End_Of_State_Trans:
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OFFLINE_HOME:
+    BTFSS   HighLvlStateReg2,offlineHome
+    GOTO    OFFLINE_SELC
+    
+    MOVLW   11111100B
+    MOVWF   PORTA
+End_Of_State_Offline_Home:
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OFFLINE_SELC:
+    BTFSS   HighLvlStateReg2,offlineSelC
+    GOTO    OFFLINE_CALIBRATION
+    
+    MOVLW   00001100B
+    MOVWF   PORTA
+    
+    CLRF    PORTB
+    MOVLW   0
+    CPFSGT  followColor
+    BRA	    showYellow2
+    MOVLW   1
+    CPFSGT  followColor
+    BRA	    showRed2
+    MOVLW   3
+    CPFSGT  followColor
+    BRA	    showGreen2
+    BRA	    showBlue2
+    showYellow2:
+	BSF	    PORTB,1
+	BRA	    CheckColorChange
+    showRed2:
+	BSF	    PORTB,5
+	BRA	    CheckColorChange
+    showGreen2:
+	BSF	    PORTB,4
+	BRA	    CheckColorChange
+    showBlue2:
+	BSF	    PORTB,3
+    CheckColorChange:
+	BCF		systemUtilReg,3
+	call		Touchsensor
+	call		Touchsensor
+	BTFSS		systemUtilReg,3 ; touch sensed
+	BRA		End_Of_State_Offline_SelC
+	ChangeColor:
+	    BCF		systemUtilReg,3; acknowledge touch
+	    call	ChangeRaceColor
+	    call	Delay333
+End_Of_State_Offline_SelC:
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OFFLINE_CALIBRATION:
+    BTFSS   HighLvlStateReg2,offlineCal
+    GOTO    OFFLINE_RACE
+    
+    MOVLW   11011010B
+    MOVWF   PORTA
+    
+    CLRF    PORTB
+    BTFSS   systemUtilReg,1
+    BRA	    CheckForCalibrationTrigger
+    MOVLW   3
+    CPFSLT  CLRCNT
+    BRA	    State_Cal_Red2
+    DECF    WREG
+    CPFSLT  CLRCNT
+    BRA	    State_Cal_Green2
+    DECF    WREG    
+    CPFSLT  CLRCNT
+    BRA	    State_Cal_Blue2
+    State_Cal_Done2:
+	BCF	    systemUtilReg,1
+	BRA	    End_Of_State_Offline_Cal
+    State_Cal_Red2:
+	BSF	    PORTB,5
+	call	    Calibrate
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkRed2:
+	    BTG		    PORTB,5
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkRed2
+	    BRA		    End_Of_State_Offline_Cal
+    State_Cal_Green2:
+	BSF	    PORTB,4
+	call	    Calibrate
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkGreen2:
+	    BTG		    PORTB,4
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkGreen2
+	    BRA		    End_Of_State_Offline_Cal
+    State_Cal_Blue2:
+	BSF	    PORTB,3
+	call	    Calibrate
+	MOVLW	    6
+	MOVWF	    SCRATCH
+	BlinkBlue2:
+	    BTG		    PORTB,3
+	    call	    Delay333
+	    DECFSZ	    SCRATCH
+	    BRA		    BlinkBlue2
+	    BRA		    End_Of_State_Offline_Cal
+    CheckForCalibrationTrigger:
+	BCF		systemUtilReg,3
+	call		Touchsensor
+	call		Touchsensor
+	BTFSS		systemUtilReg,3 ; touch sensed
+	BRA		End_Of_State_Offline_Cal
+	CalibrationTriggered:
+	    BCF		systemUtilReg,3; acknowledge touch
+	    BSF		systemUtilReg,1
+	    MOVLW	3
+	    MOVWF	CLRCNT
+	    call	Delay333
+End_Of_State_Offline_Cal:
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OFFLINE_RACE:
+    BTFSS   HighLvlStateReg2,offlineRace
+    GOTO    Main
+    
+    BTFSC   systemUtilReg,2
+    BRA	    DrivingState2
+    IdleState2:
+	MOVLW   11110010B
+	MOVWF   PORTA
+	call	Idle 
+	BTFSS	systemUtilReg,2 ; check if touch was detected and set drive flag
+	BRA	End_Of_State_Offline_Race
+	TransitionToDrive2:
+	    call	showRaceColor
+    DrivingState2:
+	call	CurrentReading
+	call	DetermineColor
+	call	lineMapper
+	call	LLI
+	call	MotorControl
+End_Of_State_Offline_Race:
     GOTO    Main ; final loop catch statement
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
     
 ISR:
+    MOVWF   WTEMP
+    MOVLW   0
+    CPFSGT  HighLvlStateReg2 ; coming from online to transition
+    BRA	    OnlineToTransition
+    BTFSC   HighLvlStateReg2,trans
+    BRA	    TransToHome
+    BTFSC   HighLvlStateReg2,offlineHome
+    BRA	    HomeToSelC
+    BTFSC   HighLvlStateReg2,offlineSelC
+    BRA	    SelCToCal
+    BTFSC   HighLvlStateReg2,offlineCal
+    BRA	    CalToRace
+    BTFSC   HighLvlStateReg2,offlineRace
+    BRA	    RaceToTrans
+    BRA	    End_Of_ISR
+OnlineToTransition:
+    call    Idle ; If the MARV is moving when the button is pressed, the MARV should stop
+    CLRF    HighLvlStateReg
+    CLRF    HighLvlStateReg2
+    BSF	    HighLvlStateReg2,trans
+    BCF	    RCSTA2,7 ; switch off UART
+    BCF	    SSP2CON1,5 ; switch off I2C
+    BRA	    End_Of_ISR
+TransToHome: ; determines which home to go to, offline home or online home
+    BTFSC   systemUtilReg,6 ; bit 6 : OfflineMode on flag
+    BRA	    TransToOfflineHome
+TransToOnlineHome:
+    CLRF    HighLvlStateReg2
+    CLRF    HighLvlStateReg
+    BSF	    HighLvlStateReg,stateHome
+    ;Enable UART AND I2C
+    BSF	    RCSTA2,7 ; switch on UART module
+    BSF	    SSP2CON1,5 ; switch on I2C module
+    BRA	    End_Of_ISR
+TransToOfflineHome:
+    CLRF    HighLvlStateReg2
+    CLRF    HighLvlStateReg
+    BSF	    HighLvlStateReg2,offlineHome
+    ;Disable UART AND I2C
+    BCF	    RCSTA2,7 ; switch off UART module
+    BCF	    SSP2CON1,5 ; switch off UART module
+    BRA	    End_Of_ISR
+HomeToSelC:
+    CLRF    HighLvlStateReg
+    CLRF    HighLvlStateReg2
+    BSF	    HighLvlStateReg2,offlineSelC
+    BRA	    End_Of_ISR
+SelCToCal:
+    CLRF    HighLvlStateReg
+    CLRF    HighLvlStateReg2
+    BSF	    HighLvlStateReg2,offlineCal
+    BRA	    End_Of_ISR
+CalToRace:
+    CLRF    HighLvlStateReg
+    CLRF    HighLvlStateReg2
+    BSF	    HighLvlStateReg2,offlineRace
+    BRA	    End_Of_ISR
+RaceToTrans:
+    call    Idle
+    CLRF    HighLvlStateReg
+    CLRF    HighLvlStateReg2
+    BSF	    HighLvlStateReg2,trans
+End_Of_ISR:
+    BCF	    INTCON,1
+    MOVF    WTEMP,W
     RETFIE
     
 RxISR:
@@ -1058,16 +1301,24 @@ InnerLoop:
 ;#########################RACE RELATED SUB ROUTINES#############################
 Idle:; Idle is also called when moving the MARV to home mode, Idle is called to 
      ; switch off the motors, incase home is requested whilst the MARV is moving
-    BTFSS	HighLvlStateReg,stateRace 
+     
+     ; TODO : Include code, to switch off PWMs 
+    BCF		systemUtilReg,2 ; indicate MARV is idle
+    BTFSC	HighLvlStateReg,stateRace 
+    BRA		IdleTouchSensing
+    BTFSC	HighLvlStateReg2,offlineRace
+    BRA		IdleTouchSensing
     BRA		End_Of_Idle
-    ; TODO : Include code, to switch off PWMs 
+    
+IdleTouchSensing:
     BCF		systemUtilReg,2 ; indicate that MARV is Idle, once again
     BCF		systemUtilReg,3
     call	Touchsensor
     call	Touchsensor
     BTFSS	systemUtilReg,3
     BRA		End_Of_Idle
-    BSF		systemUtilReg,2
+    BSF		systemUtilReg,2 ; MARV is going into drive
+    BCF		systemUtilReg,3 ; acknowledge touch
     ;TODO	Include code to switch on PWMs
 End_Of_Idle:
     return
@@ -1538,16 +1789,16 @@ ForwardConfig:
     BSF		TMR2ON
     return 
     
-DiagLeft:
+DiagRight:
     BTFSS	systemUtilReg,5
-    BRA		MotorSetUpL
-    BRA		LeftConfig
-MotorSetUpL:
+    BRA		MotorSetUpR
+    BRA		RightConfig
+MotorSetUpR:
     MOVLW	00001100B
     MOVWF	CCP1CON
     MOVWF	CCP2CON
     BSF		systemUtilReg,5
-LeftConfig:
+RightConfig:
     MOVLW	PA
     MOVWF	PSTR1CON
     BCF		PORTD,5
@@ -1561,16 +1812,16 @@ LeftConfig:
     BSF		TMR2ON   
     return
     
-DiagRight:
+DiagLeft:
     BTFSS	systemUtilReg,5
-    BRA		MotorSetUpR
-    BRA		RightConfig
-MotorSetUpR:
+    BRA		MotorSetUpL
+    BRA		LeftConfig
+MotorSetUpL:
     MOVLW	00001100B
     MOVWF	CCP1CON
     MOVWF	CCP2CON
     BSF		systemUtilReg,5
-RightConfig:
+LeftConfig:
     MOVLW	PB
     MOVWF	PSTR1CON
     BCF		PORTC,2
@@ -1595,6 +1846,41 @@ DiagStop:
     BCF		PORTC,1
     BCF		PORTC,2
     BCF		systemUtilReg,5
+    return
+;-------------------------------------------------------------------------------
+;-------------------------------------------------------------------------------
+ChangeRaceColor:
+    MoveOutOfBlue:
+	MOVLW	6
+	CPFSEQ	followColor ; currently following Blue
+	BRA	MoveOutOfGreen
+	MOVLW	3
+	MOVWF	followColor ; make MARV follow Green line now
+	MOVLW	2
+	MOVWF	lowerClr
+	BRA	End_Of_ChangeRaceColor
+    MoveOutOfGreen:
+	MOVLW	3
+	CPFSEQ	followColor ; currently following Green
+	BRA	MoveOutOfRed
+	MOVLW	1
+	MOVWF	followColor ; make MARV	follow Red line
+	MOVWF	lowerClr
+	BRA	End_Of_ChangeRaceColor
+    MoveOutOfRed:
+	MOVLW	1
+	CPFSEQ	followColor ; currently following Red
+	BRA	MoveOutOfBlack
+	MOVLW	0
+	MOVWF	followColor ; make MARV follow Black line
+	MOVWF	lowerClr
+	BRA	End_Of_ChangeRaceColor
+    MoveOutOfBlack:
+	MOVLW	6
+	MOVWF	followColor ; make MARV follow Black line
+	MOVLW	4
+	MOVWF	lowerClr
+End_Of_ChangeRaceColor:
     return
 ;-------------------------------------------------------------------------------
     
