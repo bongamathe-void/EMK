@@ -1301,8 +1301,18 @@ InnerLoop:
 ;#########################RACE RELATED SUB ROUTINES#############################
 Idle:; Idle is also called when moving the MARV to home mode, Idle is called to 
      ; switch off the motors, incase home is requested whilst the MARV is moving
+    CLRF	CCP1CON
+    CLRF	CCP2CON
+    MOVLW	0
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BCF		TMR2ON ; stops timer
+    CLRF	TMR2 ; resets the timer register
+    BCF		PORTC,1
+    BCF		PORTC,2
+    BCF		PORTD,2
+    BCF		PORTD,5
      
-     ; TODO : Include code, to switch off PWMs 
     BCF		systemUtilReg,2 ; indicate MARV is idle
     BTFSC	HighLvlStateReg,stateRace 
     BRA		IdleTouchSensing
@@ -1319,7 +1329,20 @@ IdleTouchSensing:
     BRA		End_Of_Idle
     BSF		systemUtilReg,2 ; MARV is going into drive
     BCF		systemUtilReg,3 ; acknowledge touch
-    ;TODO	Include code to switch on PWMs
+
+    ;switch on Motors
+    MOVLW	00001100B
+    MOVWF	CCP1CON
+    MOVWF	CCP2CON
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    MOVLW	75; set MotorR and MotorL to 30%
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BSF		TMR2ON
 End_Of_Idle:
     return
     
@@ -1623,7 +1646,144 @@ endOfLLI:
     return
     
 MotorControl:;LLIStateReg bits | 0 : Straight | 1 : Left | 2 : Right | 3 : ExLeft | 4 : ExRight| 5 : Stop | 6 : Lost
-    ; changes are made to the motors based on LLIStateReg
+    BTFSC LLIStateReg,0
+    BRA	  MC_STRAIGHT
+    
+    BTFSC LLIStateReg,1
+    BRA	  MC_LEFT
+    
+    BTFSC LLIStateReg,2
+    BRA	  MC_RIGHT
+    
+    BTFSC LLIStateReg,3
+    BRA   MC_ExLEFT
+    
+    BTFSC LLIStateReg,4
+    BRA   MC_ExRIGHT
+    
+    BTFSC LLIStateReg,5
+    BRA   MC_STOP
+    
+    BTFSC LLIStateReg,6
+    BRA   MC_LOST
+    
+MC_STRAIGHT:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    MOVLW	75; set MotorR and MotorL to 30%
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BRA	    End_Of_MotorControl
+    
+MC_LEFT:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    
+    LeftStateMotorR:
+	MOVLW	85
+	CPFSLT	CCPR2L
+	BRA	LeftStateMotorL
+	MOVLW	1
+	ADDWF	CCPR2L,f
+    LeftStateMotorL:
+	MOVLW	50
+	CPFSGT	CCPR1L
+	BRA	End_Of_MotorControl
+	MOVLW	1
+	SUBWF	CCPR1L,f
+	BRA	End_Of_MotorControl
+
+MC_RIGHT:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    
+    RightStateMotorR:
+	MOVLW	50
+	CPFSGT	CCPR2L
+	BRA	RightStateMotorL
+	MOVLW	1
+	SUBWF	CCPR2L,f
+    RightStateMotorL:
+	MOVLW	85
+	CPFSLT	CCPR1L
+	BRA	End_Of_MotorControl
+	MOVLW	1
+	ADDWF	CCPR1L, f
+	BRA	End_Of_MotorControl
+    
+MC_ExLEFT:
+    ExLeftStateMotorR:
+	MOVLW	PA
+	MOVWF	PSTR2CON
+	BCF	PORTD,2
+	MOVLW	85
+	CPFSLT	CCPR2L
+	BRA	ExLeftStateMotorL
+	MOVLW	5
+	ADDWF	CCPR2L,f
+    ExLeftStateMotorL:
+	MOVLW	PB
+	MOVWF	PSTR1CON
+	BCF	PORTC,2
+	MOVLW	40
+	CPFSLT	CCPR1L
+	BRA	End_Of_MotorControl
+	MOVLW	5
+	ADDWF	CCPR1L,f
+	BRA	End_Of_MotorControl
+	
+MC_ExRIGHT:
+    ExRightStateMotorR:
+	MOVLW	PB
+	MOVWF	PSTR2CON
+	BCF	PORTC,1
+	MOVLW	40
+	CPFSLT	CCPR2L
+	BRA	ExRightStateMotorL
+	MOVLW	5
+	ADDWF	CCPR2L,f
+    ExRightStateMotorL:
+	MOVLW	PA
+	MOVWF	PSTR1CON
+	BCF	PORTD,5
+	MOVLW	85
+	CPFSLT	CCPR1L
+	BRA	End_Of_MotorControl
+	MOVLW	5
+	ADDWF	CCPR1L,f
+	BRA	End_Of_MotorControl
+MC_STOP:
+    CLRF	CCP1CON
+    CLRF	CCP2CON
+    MOVLW	0
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+    BCF		TMR2ON ; stops timer
+    CLRF	TMR2 ; resets the timer register
+    BCF		PORTC,1
+    BCF		PORTC,2
+    BCF		PORTD,5
+    BCF		PORTD,2
+    BRA	    End_Of_MotorControl
+MC_LOST:
+    MOVLW	PA
+    MOVWF	PSTR1CON
+    MOVWF	PSTR2CON
+    BCF		PORTD,5
+    BCF		PORTD,2
+    MOVLW	75; set MotorR and MotorL to 30%
+    MOVWF	CCPR1L
+    MOVWF	CCPR2L
+End_Of_MotorControl:
     return
 ;###############################################################################
 ;---------------------SUB ROUTINES FOR I2C--------------------------------------
@@ -1783,7 +1943,7 @@ ForwardConfig:
     MOVWF	PSTR2CON
     BCF		PORTD,5
     BCF		PORTD,2
-    MOVLW	75; set MotorR and MotorL to 50%
+    MOVLW	75; set MotorR and MotorL to 30%
     MOVWF	CCPR1L
     MOVWF	CCPR2L
     BSF		TMR2ON
@@ -1845,6 +2005,8 @@ DiagStop:
     CLRF	TMR2 ; resets the timer register
     BCF		PORTC,1
     BCF		PORTC,2
+    BCF		PORTD,2
+    BCF		PORTD,5
     BCF		systemUtilReg,5
     return
 ;-------------------------------------------------------------------------------
