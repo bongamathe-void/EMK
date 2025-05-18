@@ -6,7 +6,7 @@
     CONFIG WDTEN = OFF
     
     systemUtilReg	EQU	0x00; Bit0: Code Recieved, Bit1: Calibrate, Bit2: 0 = Idle, 1 = Driving, Bit3: TouchSensed, Bit4: Recieving Message,
-				    ; Bit5 : Motors are moving, Bit6 : offlineFlag
+				    ; Bit5 : Motors are moving, Bit6 : offlineFlag , Bit7 : Echo Flag
     HighLvlStateReg	EQU	0x01; Flag register for the fall through state machine
     Code1		EQU	0x02; First message digit recieved
     Code2		EQU	0x03; Second message digit recieved
@@ -56,6 +56,7 @@
     stateRace	EQU	3
     stateDiag	EQU	4
     stateProg	EQU	5
+    stateEcho	EQU	6
     ;offline state bits-------
     trans	EQU	0
     offlineHome	EQU	1
@@ -353,10 +354,18 @@ End_Of_State_Diag:
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 STATE_PROGRAM:
     BTFSS   HighLvlStateReg,stateProg
-    GOTO    STATE_TRANS
+    GOTO    STATE_ECHO
     MOVLW   10110110B
     MOVWF   PORTA
 End_Of_State_Prog:
+    call    Check_Code_Recieved
+;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+STATE_ECHO:
+    BTFSS   HighLvlStateReg,stateEcho
+    GOTO    STATE_TRANS
+    MOVLW   00011100B
+    MOVWF   PORTA
+End_Of_State_Echo:
     call    Check_Code_Recieved
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 STATE_TRANS:
@@ -600,6 +609,8 @@ End_Of_ISR:
 RxISR:
     BTFSC   systemUtilReg,4 ; check if message recieve mode been set
     BRA	    MessageISR
+    BTFSC   systemUtilReg,7 ; check if echo recieve mode been set
+    BRA	    EchoISR
     MOVWF   WTEMP; Save WREG value 
     MOVF    RCREG2,W
     MOVWF   RxSCRATCH
@@ -663,6 +674,26 @@ MessageISR:
     BCF		systemUtilReg,4
 End_Of_MessageISR:
     RETFIE
+    
+EchoISR:
+    MOVFF	RCREG2,RxSCRATCH
+    MOVFF	RxSCRATCH,INDF2
+    INCF	FSR2
+    MOVLW	0x0A ; check if \n was recieved to terminate message
+    CPFSEQ	RxSCRATCH
+    BRA		End_Of_EchoISR
+    MOVLW	'7'
+    MOVWF	Code1
+    MOVLW	'1'
+    MOVWF	Code2
+    MOVLW	'0'
+    MOVWF	Code3
+    MOVLW	0
+    MOVWF	INDF2
+    BSF		systemUtilReg,0
+    BCF		systemUtilReg,7
+End_Of_EchoISR:
+    RETFIE
 
 ;########################SUB ROUTINE############################################
 Check_Code_Recieved:
@@ -693,6 +724,10 @@ Check_Code_Recieved:
     INCF    WREG  ; check for 5XX codes
     CPFSGT  SCRATCH
     GOTO    Program_codes
+    INCF    WREG
+    INCF    WREG ; WREG == 7
+    CPFSGT  SCRATCH
+    GOTO    EchoCodes ; check for 7XX codes
     GOTO    Home_codes ; default to Home mode if non valid code recieved
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$    
 Home_codes:
@@ -1038,6 +1073,39 @@ Set_To_Program_Mode:
     call    TransmitMARVResponse
     GOTO    End_Of_Check_Code
 ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+EchoCodes:
+    MOVF	Code2,W
+    ADDLW	-0x30
+    MOVWF	SCRATCH
+    MOVLW	0
+    CPFSGT	SCRATCH
+    BRA		Set_To_Echo_Mode
+    MOVLW	1
+    CPFSGT	SCRATCH
+    BRA		EchoBackMessage
+    BRA		End_Of_Check_Code
+EchoBackMessage:
+    call	MemoryToEUART2
+    BRA		End_Of_Check_Code
+Set_To_Echo_Mode:
+    CLRF	HighLvlStateReg
+    BSF		HighLvlStateReg,stateEcho
+    
+    MOVLW	3
+    MOVWF	FSR2H
+    CLRF	FSR2L
+    
+    BSF		systemUtilReg,7 ; Indicate EUART receptions go to Echo ISR
+    
+    MOVLW   EchoMode
+    MOVWF   TBLPTRL,0
+    MOVLW   (EchoMode>>8)
+    MOVWF   TBLPTRH,0
+    MOVLW   (EchoMode>>16)
+    MOVWF   TBLPTRU,0
+    call    TransmitMARVResponse
+    GOTO    End_Of_Check_Code
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 End_Of_Check_Code:
     return
     
@@ -1078,6 +1146,24 @@ Wait_for_TX_readyMem:
 End_Of_MemoryToEUART:
     return
     
+MemoryToEUART2:
+    MOVLW   3
+    MOVWF   FSR2H
+    MOVLW   0
+    MOVWF   FSR2L
+TransmitFromMemory2:
+    MOVFF   INDF2,SCRATCH
+    INCF    FSR2
+Wait_for_TX_readyMem2:
+    BTFSS   TXSTA2,1,0	; Wait until TSR is empty
+    BRA     Wait_for_TX_readyMem2
+    
+    MOVFF   SCRATCH,TXREG2
+    MOVLW   0x0A ; check for \n
+    CPFSEQ  SCRATCH
+    BRA	    TransmitFromMemory2
+End_Of_MemoryToEUART2:
+    return
  ;---------------SUB ROUTINE FOR SENSOR DATA DIAGNOSTICS-------------------------
 TransmitSensorData:
     LFSR    2,ColorReg3
@@ -2067,5 +2153,5 @@ DiagnosticMode:		DB	'#401',0x0D,0x0A,0x00
 ProgramMode:		DB	'#501',0x0D,0x0A,0x00
 SloganChangeAck:	DB	'#511',0x0D,0x0A,0x00
 SloganRecieved:		DB	'#514',0x0D,0x0A,0x00
-		
+EchoMode:		DB	'#701',0x0D,0x0A,0x00	
     END   
