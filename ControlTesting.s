@@ -50,6 +50,26 @@
 				    ; Bit4 : offline Race
     prevLLIStateReg	EQU	0x3D
 	
+    Kp			EQU	0x3E
+    Ki			EQU	0x3F
+    Kd			EQU	0x40
+    Accum		EQU	0x41
+    ErrReg		EQU	0x42
+    prevErrReg		EQU	0x43
+    pid_stat1		EQU	0x44
+    pidResult		EQU	0x45
+    ;Base speed is 75 (30%)
+    
+    ;PID Status register bits
+    pid_sign	EQU	7
+    d_err_sign	EQU	6 ; d_err sign bit
+    mag		EQU	5
+    p_err_sign	EQU	4
+    a_err_sign	EQU	3
+    err_sign	EQU	2
+    a_err_zero	EQU	1
+    err_zero	EQU	0
+	
     ;state  bits--------------
     stateHome	EQU	0
     stateSelC	EQU	1
@@ -206,6 +226,12 @@ INIT:
     BSF	    HighLvlStateReg,stateRace
     CLRF    systemUtilReg
     CLRF    CLRCNT
+    
+    MOVLW   25
+    MOVWF   Kp
+    CLRF    Ki
+    CLRF    Kd
+    
     GOTO    Main
     
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -327,7 +353,9 @@ STATE_RACE:
 	call	DetermineColor
 	call	lineMapper
 	call	LLI
-	call	MotorControl
+	call	ControlAlgorithm
+	call	MotorControl2
+	;call	MotorControl
 End_Of_State_Race:
     call    Check_Code_Recieved
 ;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1685,7 +1713,7 @@ lineMapper:
 endOfLineMapper:
     return
     
-LLI:
+LLI: ; LLI Must be changed to set the error based on SensorLine REgister 
     MOVFF   LLIStateReg,prevLLIStateReg
     CLRF    LLIStateReg
     CLRF    PORTB
@@ -1696,53 +1724,96 @@ Stop:
     BCF	    systemUtilReg,2 ; set it to go back to Idle
     BSF	    LLIStateReg,5
     GOTO    endOfLLI
-Evaluations: 
-    MOVLW   31
-    CPFSLT  SensorLine
-    BRA	    EvalLost
-    BTFSC   SensorLine,0
-    BRA	    EvalExRight
-    BTFSC   SensorLine,4
-    BRA	    EvalExLeft
-    BTFSC   SensorLine,1
-    BRA	    EvalRight
-    BTFSC   SensorLine,3
-    BRA	    EvalLeft
-    BTFSC   SensorLine,2
-    BRA	    EvalStraight
-    BRA	    Inconclusive
-EvalStraight:
-    BSF	    PORTB,3
-    BSF	    LLIStateReg,0
-    BRA	    endOfLLI
-EvalLeft:
-    BSF	    PORTB,2
-    BSF	    LLIStateReg,1
-    BRA	    endOfLLI
-EvalRight:
-    BSF	    PORTB,4
-    BSF	    LLIStateReg,2
-    BRA	    endOfLLI
-EvalExLeft:
-    BSF	    PORTB,1
-    BSF	    LLIStateReg,3
-    BRA    endOfLLI
-EvalExRight:
-    BSF	    PORTB,5
-    BSF	    LLIStateReg,4
-    BRA	    endOfLLI
-EvalLost:
-    BSF	    LLIStateReg,6
-    BRA	    endOfLLI
-Inconclusive:
-    MOVFF   prevLLIStateReg,LLIStateReg
-    BSF	    PORTB,1
-    BSF	    PORTB,2
-    BSF	    PORTB,3
-    BSF	    PORTB,4
-    BSF	    PORTB,5
+Evaluations:
+    MOVLW   (SensorTable >> 8)
+    MOVWF   PCLATH
+    MOVLW   (SensorTable >> 16)
+    MOVWF   PCLATU
+    MOVF    SensorLine,W
+    MULLW   2
+    MOVF    PRODL,W
+    call    SensorTable
+    MOVWF   ErrReg
+    BTFSS   ErrReg,7
+    BRA	    Positive
+Negative:
+    BSF	    pid_stat1,err_sign
+    COMF    ErrReg
+    INCF    ErrReg
+Positive:
+    BCF	    pid_stat1,err_sign
 endOfLLI:
     return
+;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+ControlAlgorithm:
+    BCF	    pid_stat1,pid_sign
+    CLRF    SCRATCH
+    call    ProportionalControl
+    CLRF    pidResult
+    ADDWF   pidResult
+    BTFSC   pid_stat1,p_err_sign
+    BSF	    pid_stat1,pid_sign
+    
+    call    IntegralControl
+    MOVWF   SCRATCH
+    BTFSC   pid_stat1,a_err_sign
+    BRA	    ResultMinusA
+ResultPlusA:
+    
+ResultMinusA:
+End_Of_ControlAlgorithm:
+    return
+;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+ProportionalControl:
+    BCF	    pid_stat1,p_err_sign
+    BTFSC   pid_stat1,err_sign
+    BSF	    pid_stat1,p_err_sign
+    MOVF    Kp,W
+    MULWF   ErrReg             ; Multiply ErrReg * Kp
+    MOVF    PRODL,W
+    return
+    
+IntegralControl:
+    BTFSS   pid_stat1,err_sign
+    BRA	    AddToAccum
+    MinusFromAccum:
+	MOVFF	Accum,SCRATCH
+	MOVF	ErrReg,W
+	SUBWF	Accum
+	BTFSS	SCRATCH,7 ; if previous Accum is negative
+	BRA	IntegralControlResult
+	BTFSC	Accum,7 ; if new Accum is positive after subtraction
+	BRA	IntegralControlResult
+	MOVLW	-127
+	MOVWF	Accum
+	BRA	IntegralControlResult
+    AddToAccum:
+	MOVFF	Accum,SCRATCH
+	MOVF	ErrReg,W
+	ADDWF	Accum
+	BTFSC	SCRATCH,7 ; if previous Accum is postive
+	BRA	IntegralControlResult
+	BTFSS	Accum,7 ; if new Accum is negative after addition 
+	BRA	IntegralControlResult
+	MOVLW	127
+	MOVWF	Accum
+IntegralControlResult:
+    BCF	    pid_stat1,a_err_sign
+    MOVFF   Accum, SCRATCH
+    BTFSS   Accum,7 ; if Accum is negative
+    BRA	    FinalMultiply
+    BSF	    pid_stat1,a_err_sign
+    COMF    SCRATCH
+    INCF    SCRATCH ; make Accum in SCRATCH positive
+    FinalMultiply:
+	MOVF	Ki,W
+	MULWF	SCRATCH
+	MOVF	PRODL,W
+    return
+;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+MotorControl2:
+    return
+;-------------------------------------------------------------------------------
     
 MotorControl:;LLIStateReg bits | 0 : Straight | 1 : Left | 2 : Right | 3 : ExLeft | 4 : ExRight| 5 : Stop | 6 : Lost
     BTFSC LLIStateReg,0
@@ -2144,6 +2215,42 @@ ChangeRaceColor:
 End_Of_ChangeRaceColor:
     return
 ;-------------------------------------------------------------------------------
+    
+SensorTable:
+    ADDWF   PCL
+    RETLW   0 ; 00000
+    RETLW   5 ; 00001
+    RETLW   2 ; 00010
+    RETLW   3 ; 00011
+    RETLW   0 ; 00100
+    RETLW   3 ; 00101
+    RETLW   1 ; 00110
+    RETLW   4 ; 00111
+    RETLW  -2 ; 01000
+    RETLW   1 ; 01001
+    RETLW   0 ; 01010
+    RETLW   3 ; 01011
+    RETLW  -1 ; 01100
+    RETLW  -1 ; 01101
+    RETLW   0 ; 01110
+    RETLW   5 ; 01111
+    RETLW  -5 ; 10000
+    RETLW   0 ; 10001
+    RETLW  -1 ; 10010
+    RETLW   4 ; 10011
+    RETLW  -3 ; 10100
+    RETLW   0 ; 10101
+    RETLW   1 ; 10110
+    RETLW   5 ; 10111
+    RETLW  -4 ; 11000
+    RETLW  -4 ; 11001
+    RETLW  -3 ; 11010
+    RETLW   0 ; 11011
+    RETLW  -4 ; 11100
+    RETLW  -5 ; 11101
+    RETLW  -5 ; 11110
+    RETLW   0 ; 11111
+    
     
 ; Code responses for the MARV to send, are stored in a table in Program memory
 ORG 0x5000 

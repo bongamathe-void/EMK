@@ -19,6 +19,7 @@
                    projectFiles="true">
       <itemPath>/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/CodeRxandTx.s</itemPath>
       <itemPath>/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/Diag_Test.s</itemPath>
+      <itemPath>/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/ControlTesting.s</itemPath>
     </logicalFolder>
   </logicalFolder>
   <projectmakefile>Makefile</projectmakefile>
@@ -64,6 +65,16 @@
         <makeCustomizationEnableLongLines>false</makeCustomizationEnableLongLines>
         <makeCustomizationNormalizeHexFile>false</makeCustomizationNormalizeHexFile>
       </makeCustomizationType>
+      <item path="/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/ControlTesting.s"
+            ex="true"
+            overriding="false">
+        <pic-as-assembler>
+        </pic-as-assembler>
+        <pic-as-global>
+        </pic-as-global>
+        <pic-as-linker>
+        </pic-as-linker>
+      </item>
       <item path="/home/bamzeefantastic/MPLABXProjects/EMKprac3.X/Diag_Test.s"
             ex="true"
             overriding="false">
