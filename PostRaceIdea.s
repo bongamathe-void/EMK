@@ -21,45 +21,38 @@
     Count3		EQU	0x0C; used for delays and counting
     CLRCNT		EQU	0x0D; used to iterate over 3 colors in Calibration
     ADCONSEL		EQU	0x0E; used to determine which ADC channel to select
-    THRESH3		EQU	0x0F; THRESH3 RGB : {R3, G3, B3}0x0F,0x10,0x11
-    THRESH4		EQU	0x12; THRESH4 RGB : {R4, G4, B4}0x12,0x13,0x14
-    THRESH5		EQU	0x15; THRESH5 RGB : {R5, G5, B5}0x15,0x16,0x17
-    THRESH6		EQU	0x18; THRESH6 RGB : {R6, G6, B6}0x18,0x19,0x1A
-    THRESH7		EQU	0x1B; THRESH7 RGB : {R7, G7, B7}0x1B,0x1C,0x1D
-    SMPL0		EQU	0x1E; for averaging in readAndAverage
-    SMPL1		EQU	0x1F; for averaging in readAndAverage
-    TouchThresh		EQU	0x20; holds the low threshold for touch sensing
-    LLIStateReg		EQU	0x21; bits represent LLI actions
-    CURRENT3		EQU	0x22; CURRENT3 RGB : {R3, G3, B3}0x22,0x23,0x24
-    CURRENT4		EQU	0x25; CURRENT4 RGB : {R4, G4, B4}0x25,0x26,0x27
-    CURRENT5		EQU	0x28; CURRENT5 RGB : {R5, G5, B5}0x28,0x29,0x2A
-    CURRENT6		EQU	0x2B; CURRENT6 RGB : {R6, G6, B6}0x2B,0x2C,0x2D
-    CURRENT7		EQU	0x2E; CURRENT7 RGB : {R7, G7, B7}0x2E,0x2F,0x30
-    ColorReg3		EQU	0x31; Bit0 : R, Bit1: G, Bit2 : B ; determines what color the sensor is on
-    ColorReg4		EQU	0x32; Bit0 : R, Bit1: G, Bit2 : B
-    ColorReg5		EQU	0x33; Bit0 : R, Bit1: G, Bit2 : B
-    ColorReg6		EQU	0x34; Bit0 : R, Bit1: G, Bit2 : B
-    ColorReg7		EQU	0x35; Bit0 : R, Bit1: G, Bit2 : B
-    stopReg		EQU	0x36
-    lowerClr		EQU	0x37; used in LineMapper
-    SensorLine		EQU	0x38; used in LineMapper and LLI
-    PageCTR		EQU	0x39; used to count page block of 8 bytes when writing I2C
-    PageAddress		EQU	0x3A; used to point to current write address in I2C
-    DiagStateReg	EQU     0x3B; used to determine what diagnostic state
-    HighLvlStateReg2	EQU	0x3C; Bit0: TransitionState, Bit1 : offline home, Bit2 : offline SelectColor, Bit3 : offline Calibration, 
+    THRESH3		EQU	0x0F; THRESH3 RGB : {R3, G3, B3}0x0F,0x10,0x11,0x12
+    THRESH4		EQU	0x13; THRESH4 RGB : {R4, G4, B4}0x13,0x14,0x15,0x16
+    THRESH5		EQU	0x17; THRESH5 RGB : {R5, G5, B5}0x17,0x18,0x19,0x1A
+    THRESH6		EQU	0x1B; THRESH6 RGB : {R6, G6, B6}0x1B,0x1C,0x1D,0x1E
+    THRESH7		EQU	0x1F; THRESH7 RGB : {R7, G7, B7}0x1F,0x20,0x21,0x22
+    SMPL0		EQU	0x23; for averaging in readAndAverage
+    SMPL1		EQU	0x24; for averaging in readAndAverage
+    TouchThresh		EQU	0x25; holds the low threshold for touch sensing
+    LLIStateReg		EQU	0x26; bits represent LLI actions
+    CURRENT3		EQU	0x27; CURRENT3 RGB : {R3, G3, B3}0x27,0x28,0x29
+    CURRENT4		EQU	0x2A; CURRENT4 RGB : {R4, G4, B4}0x2A,0x2B,0x2C
+    CURRENT5		EQU	0x2D; CURRENT5 RGB : {R5, G5, B5}0x2D,0x2E,0x2F
+    CURRENT6		EQU	0x30; CURRENT6 RGB : {R6, G6, B6}0x30,0x31,0x32
+    CURRENT7		EQU	0x33; CURRENT7 RGB : {R7, G7, B7}0x33,0x34,0x35
+    ColorReg3		EQU	0x36; Bit0 : R, Bit1: G, Bit2 : B ; determines 
+    ColorReg4		EQU	0x37; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg5		EQU	0x38; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg6		EQU	0x39; Bit0 : R, Bit1: G, Bit2 : B
+    ColorReg7		EQU	0x3A; Bit0 : R, Bit1: G, Bit2 : B
+    stopReg		EQU	0x3B
+    lowerClr		EQU	0x3C; used in LineMapper
+    SensorLine		EQU	0x3D; used in LineMapper and LLI
+    PageCTR		EQU	0x3E; used to count page block of 8 bytes when writing I2C
+    PageAddress		EQU	0x3F; used to point to current write address in I2C
+    DiagStateReg	EQU     0x40; used to determine what diagnostic state
+    HighLvlStateReg2	EQU	0x41; Bit0: TransitionState, Bit1 : offline home, Bit2 : offline SelectColor, Bit3 : offline Calibration, 
 				    ; Bit4 : offline Race
-    prevLLIStateReg	EQU	0x3D
+    prevLLIStateReg	EQU	0x42
+    BlackFlags		EQU	0x43
+    SCRATCH2Reg		EQU	0x44
+    SCRATCH3		EQU	0x45
     
-    BLACKTHRESH3	EQU	0x3E
-    BLACKTHRESH4	EQU	0x41
-    BLACKTHRESH5	EQU	0x44
-    BLACKTHRESH6	EQU	0x47
-    BLACKTHRESH7	EQU	0x4A
-	
-    CLRCNT2		EQU	0x4D
-    SNSCNT		EQU	0x4E
-    BlackFlags		EQU	0x4F
-    SCRATCH2		EQU	0x50
 	
     ;state  bits--------------
     stateHome	EQU	0
@@ -217,6 +210,7 @@ INIT:
     BSF	    HighLvlStateReg,stateRace
     CLRF    systemUtilReg
     CLRF    CLRCNT
+    call    StartSystem
     GOTO    Main
     
 ;0000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -286,6 +280,7 @@ STATE_CALIBRATION:
     BRA	    State_Cal_Black
     State_Cal_Done:
 	BCF	    systemUtilReg,1
+	call	    saveData
 	BRA	    End_Of_State_Cal
     State_Cal_Red:
 	BSF	    PORTB,5
@@ -495,6 +490,7 @@ OFFLINE_CALIBRATION:
     BRA	    State_Cal_Black2
     State_Cal_Done2:
 	BCF	    systemUtilReg,1
+	call	    saveData
 	BRA	    End_Of_State_Offline_Cal
     State_Cal_Red2:
 	BSF	    PORTB,5
@@ -1259,7 +1255,7 @@ Calibrate:
     BRA	    FlashBlue
     DECF    WREG
     CPFSLT  CLRCNT
-    BRA	    BlackCal
+    BRA	    FlashGreen ; calibrating Black with Green Light
     NoCalibrate:
 	BRA	    End_Of_Calibrate
     FlashRed:
@@ -1274,9 +1270,9 @@ Calibrate:
 	MOVWF	    PORTE
     SensorItr:
 	MOVF	    CLRCNT, W
-	SUBLW	    3 ; Determine value to offset THRESH3 (3 - CLRCNT)
+	SUBLW	    4 ; Determine value to offset THRESH3 (4 - CLRCNT)
 	ADDLW	    THRESH3
-	MOVWF	    FSR0L ; MAKE FSR0 point to THRESH register : {R0, G0, B0}
+	MOVWF	    FSR0L ; MAKE FSR0 point to THRESH register : {R0, G0, B0, K0}
 	call	    longDelay
 	MOVLW	    3
 	MOVWF	    ADCONSEL
@@ -1286,66 +1282,14 @@ Calibrate:
 	    call	loadADCON
 	    call	readAndAverage
 	    MOVWF	INDF0;move the ADC reading to register that FSR0 points to
-	    MOVLW	3
+	    MOVLW	4
 	    ADDWF	FSR0L,F;Point to the next sensor register address
 	    INCF	ADCONSEL;Increment so that in next loop, using next channel
 	    DECFSZ	Count1
 	    BRA		loopSensors
-	    BRA		End_Of_Calibrate
-    BlackCal:
-	call	    CalibrateBlack
 End_Of_Calibrate:
     DECF    CLRCNT
     CLRF    PORTE
-    return
-    
-CalibrateBlack:
-    CLRF	SCRATCH2
-    MOVLW	3
-    MOVWF	CLRCNT2
-    LoopColor2:
-	MOVF	CLRCNT2,W
-	SUBLW	3 ; determines what color should flash , 0-red,1-green,2-blue
-	MOVWF	SCRATCH2
-	MOVLW	0
-	CPFSGT	SCRATCH2
-	BRA	FlashRed2
-	MOVLW	1
-	CPFSGT	SCRATCH2
-	BRA	FlashGreen2
-	BRA	FlashBlue2
-    FlashRed2:
-	MOVLW	RED
-	MOVWF	LATE
-	BRA	SensorItr2
-    FlashGreen2:
-	MOVLW	GREEN
-	MOVWF	LATE
-	BRA	SensorItr2
-    FlashBlue2:
-	MOVLW	BLUE
-	MOVWF	LATE
-    SensorItr2:
-	MOVLW	BLACKTHRESH3
-	ADDWF	SCRATCH2,W;offsetting the pointer for the color
-	MOVWF	FSR0L
-	call	longDelay
-	MOVLW	3
-	MOVWF	ADCONSEL
-	MOVLW	5
-	MOVWF	SNSCNT
-    loopSensors2:
-	call	loadADCON
-	call	readAndAverage
-	MOVWF	INDF0;move the ADC reading to register that FSR0 points to
-	MOVLW	3
-	ADDWF	FSR0L,F;Point to the next sensor register address
-	INCF	ADCONSEL;Increment so that in next loop, using next channel
-	DECFSZ	SNSCNT
-	BRA	loopSensors2
-    endOfloopSensors:
-	DECFSZ	CLRCNT2
-	BRA	LoopColor2
     return
 ;#######################END OF SUB ROUTINE######################################
     
@@ -1612,91 +1556,99 @@ loop5Sensors:
     return
     
 DetermineColor:
+    MOVFF	ColorReg3,SCRATCH3
     LFSR	0,CURRENT3
     LFSR	1,THRESH3
-    LFSR	2,BLACKTHRESH3
     call	DtrClrHelper
     MOVWF	ColorReg3
 	
+    MOVFF	ColorReg4,SCRATCH3
     LFSR	0,CURRENT4
     LFSR	1,THRESH4
-    LFSR	2,BLACKTHRESH4
     call	DtrClrHelper
     MOVWF	ColorReg4
 	
+    MOVFF	ColorReg5,SCRATCH3
     LFSR	0,CURRENT5
     LFSR	1,THRESH5
-    LFSR	2,BLACKTHRESH5
     call	DtrClrHelper
     MOVWF	ColorReg5
 	
+    MOVFF	ColorReg6,SCRATCH3
     LFSR	0,CURRENT6
     LFSR	1,THRESH6
-    LFSR	2,BLACKTHRESH6
     call	DtrClrHelper
     MOVWF	ColorReg6
 	
+    MOVFF	ColorReg7,SCRATCH3
     LFSR	0,CURRENT7
     LFSR	1,THRESH7
-    LFSR	2,BLACKTHRESH7
     call	DtrClrHelper
     MOVWF	ColorReg7
     return
 
 DtrClrHelper:
-    CLRF	BlackFlags
-    MOVLW	30
-    ADDWF	INDF2,W
-    CPFSGT	INDF0
-    BSF		BlackFlags,0
-    INCF	FSR2
-    INCF	FSR0
-    MOVLW	30
-    ADDWF	INDF2,W
-    CPFSGT	INDF0
-    BSF		BlackFlags,1
-    INCF	FSR2
-    INCF	FSR0
-    MOVLW	30
-    ADDWF	INDF2,W
-    CPFSGT	INDF0
-    BSF		BlackFlags,2
-    MOVF	BlackFlags,W
-    SUBLW	7
-    BZ		SensedBlack
-    BRA		MainColorSensing
-SensedBlack:
     CLRF	SCRATCH
     CLRF	BlackFlags
-    BRA		End_Of_DtrClrHelper
-MainColorSensing:
-    DECF	FSR0L,F
-    DECF	FSR0L,F
-    CLRF	SCRATCH
-    MOVLW	5
+    CLRF	SCRATCH2Reg
+DtrRed:
+    MOVLW	3
+    ADDWF	FSR1L,F ; make FSR1 point to black thresh
+    MOVLW	30
+    ADDWF	INDF1,W ; offset black thresh  up by 10
+    CPFSGT	INDF0
+    BSF		BlackFlags,0 ; if current red < BlackThresh + 10, flag Black
+    
+    MOVLW	3
+    SUBWF	FSR1L,F ; make FSR1 point to red thresh
+    MOVLW	12
     SUBWF	INDF1,W
     CPFSLT	INDF0; determine if sensor is Red
     BSF		SCRATCH,0
 	
-    MOVLW	1
-    ADDWF	FSR0L,F
-    ADDWF	FSR1L,F
+DtrGreen:
+    INCF	FSR0L,F ; current green
+    INCF	FSR1L,F ; threshgreen 
+    
+    MOVLW	2
+    ADDWF	FSR1L,F ; make FSR1 point to Black thresh
+    MOVLW	30
+    ADDWF	INDF1,W
+    CPFSGT	INDF0
+    BSF		BlackFlags,1 ; if current green < BlackThresh + 10, flag Black
+    
+    MOVLW	2
+    SUBWF	FSR1L,F ; make FSR1 point to green Thresh
     MOVLW	7
     SUBWF	INDF1,W; determine if sensor is Green
     CPFSLT	INDF0
     BSF		SCRATCH,1
-	
+
+DtrBlue:
+    INCF	FSR0L,F ; current Blue
+    INCF	FSR1L,F ; threshBlue
+    
     MOVLW	1
-    ADDWF	FSR0L,F
-    ADDWF	FSR1L,F
-    MOVLW	2
+    ADDWF	FSR1L,F ; make FSR1 point to Black thresh
+    MOVLW	30
+    ADDWF	INDF1,W
+    CPFSGT	INDF0
+    BSF		BlackFlags,2 ; if current blue < BlackThresh + 10, flag Black
+    
+    MOVLW	1
+    SUBWF	FSR1L,F ; make FSR1 point to Blue Thresh
+    MOVLW	0
     SUBWF	INDF1,W
     CPFSLT	INDF0
     BSF		SCRATCH,2; FSR0 ends on current Blue
     
+    MOVLW	7
+    SUBWF	BlackFlags,W
+    BZ		ResolveBlack
     MOVLW	0
     CPFSGT	SCRATCH
-    BRA		DetermineTheHighest
+    ;BRA		DetermineTheClosest
+    BRA		InconclusiveColor
     MOVF	SCRATCH,W
     SUBLW	3
     BZ		ResolveRedGreen
@@ -1706,34 +1658,67 @@ MainColorSensing:
     MOVF	SCRATCH,W
     SUBLW	6
     BZ		ResolveGreenBlue
-    MOVLW	7
-    MOVWF	SCRATCH
     BRA		End_Of_DtrClrHelper
-
-DetermineTheHighest:
-    CLRF	BlackFlags
-    BSF		BlackFlags,2
-    MOVFF	INDF0,SCRATCH2
-    DECF	FSR0
-    MOVF	SCRATCH2,W
-    CPFSLT	INDF0
-    BRA		GreenHigher
-    BRA		TestRed
-GreenHigher:
-    CLRF	BlackFlags
-    BSF		BlackFlags,1
-    MOVFF	INDF0,SCRATCH2
-TestRed:
-    DECF	FSR0
-    MOVF	SCRATCH2,W
-    CPFSLT	INDF0
-    BRA		RedHigher
-    BRA		FinalResolution
-RedHigher:
-    CLRF	BlackFlags
-    BSF		BlackFlags,0
-FinalResolution:
-    MOVFF	BlackFlags,SCRATCH
+    
+ResolveBlack:
+    CLRF	SCRATCH
+    BRA		End_Of_DtrClrHelper
+    
+;DetermineTheClosest:
+;    BSF		SCRATCH,2
+;    MOVF	INDF0,W
+;    DECF	FSR0L,F ; point to current green 
+;    CPFSLT	INDF0
+;    BRA		GreenHighest
+;    BRA		TestRed
+;GreenHighest:
+;    CLRF	SCRATCH
+;    BSF		SCRATCH,1
+;    MOVF	INDF0,W
+;TestRed:
+;    DECF	FSR0L,F ; point to current red
+;    CPFSLT	INDF0
+;    BRA		RedHighest
+;    BRA		End_Of_DetermineTheHighest
+;RedHighest:
+;    CLRF	SCRATCH
+;    BSF		SCRATCH,0
+;    End_Of_DetermineTheHighest:
+;    BRA		End_Of_DtrClrHelper
+    
+;DetermineTheClosest:
+;    BSF			SCRATCH,2
+;    MOVF		INDF0,W
+;    SUBWF		INDF1,W
+;    ;ADDLW		5 ; Made a change here 
+;    MOVWF		SCRATCH2Reg
+;    DECF		FSR1L,F; point to green thresh
+;    DECF		FSR0L,F; point to green current
+;    MOVF		INDF0,W
+;    SUBWF		INDF1,W
+;    CPFSLT		SCRATCH2Reg
+;    BRA			GreenTheClosest
+;    BRA			TestRed
+;GreenTheClosest:
+;    MOVWF		SCRATCH2Reg
+;    CLRF		SCRATCH
+;    BSF			SCRATCH,1
+;TestRed:
+;    DECF		FSR1L,F ; point to red thresh
+;    DECF		FSR0L,F ; point to red current
+;    MOVF		INDF0,W
+;    SUBWF		INDF1,W
+;    CPFSLT		SCRATCH2Reg
+;    BRA			RedTheClosest
+;    BRA			End_Of_DetermineTheClosest
+;RedTheClosest:
+;    CLRF		SCRATCH
+;    BSF			SCRATCH,0
+;    End_Of_DetermineTheClosest:
+;	BRA		End_Of_DtrClrHelper
+    
+InconclusiveColor:
+    MOVFF	SCRATCH3,SCRATCH
     BRA		End_Of_DtrClrHelper
 
 ResolveRedGreen:
@@ -1930,7 +1915,7 @@ MC_STRAIGHT:
     SUBWF	LLIStateReg,W
     BZ		ContinueStraight
 FirstStopBeforeGoingStraight:
-    MOVLW	0
+    MOVLW	65
     MOVWF	CCPR1L
     MOVWF	CCPR2L
     BRA		End_Of_MotorControl
@@ -1973,13 +1958,13 @@ MC_RIGHT:
     BCF		PORTD,2
     
     RightStateMotorR:
-	MOVLW	50
+	MOVLW	0
 	CPFSGT	CCPR2L
 	BRA	RightStateMotorL
 	MOVLW	1
 	SUBWF	CCPR2L,f
     RightStateMotorL:
-	MOVLW	110
+	MOVLW	120
 	CPFSLT	CCPR1L
 	BRA	End_Of_MotorControl
 	MOVLW	1
@@ -1991,7 +1976,7 @@ MC_ExLEFT:
 	MOVLW	PA
 	MOVWF	PSTR2CON
 	BCF	PORTD,2
-	MOVLW	120
+	MOVLW	150
 	CPFSLT	CCPR2L
 	BRA	ExLeftStateMotorL
 	MOVLW	5
@@ -2000,7 +1985,7 @@ MC_ExLEFT:
 	MOVLW	PB
 	MOVWF	PSTR1CON
 	BCF	PORTC,2
-	MOVLW	40
+	MOVLW	50
 	CPFSLT	CCPR1L
 	BRA	End_Of_MotorControl
 	MOVLW	5
@@ -2012,7 +1997,7 @@ MC_ExRIGHT:
 	MOVLW	PB
 	MOVWF	PSTR2CON
 	BCF	PORTC,1
-	MOVLW	40
+	MOVLW	50
 	CPFSLT	CCPR2L
 	BRA	ExRightStateMotorL
 	MOVLW	5
@@ -2021,7 +2006,7 @@ MC_ExRIGHT:
 	MOVLW	PA
 	MOVWF	PSTR1CON
 	BCF	PORTD,5
-	MOVLW	120
+	MOVLW	150
 	CPFSLT	CCPR1L
 	BRA	End_Of_MotorControl
 	MOVLW	5
@@ -2311,7 +2296,53 @@ ChangeRaceColor:
 End_Of_ChangeRaceColor:
     return
 ;-------------------------------------------------------------------------------
+StartSystem:
+    LFSR	0,THRESH3
+    MOVLW	20
+    MOVWF	Count1
+    CLRF	EEADR
+    BCF		EECON1,7
+    BCF		EECON1,6
+ReadLoop:
     
+    BSF		EECON1,0
+    MOVFF	EEDATA,POSTINC0
+    
+    INCF	EEADR
+    DECFSZ	Count1
+    BRA		ReadLoop
+    return
+    
+saveData:
+    MOVLW	20
+    MOVWF	Count1
+    CLRF	EEADR
+    ;CLRF	EEADRH
+    LFSR	0,THRESH3
+    
+    BCF		EECON1,7
+    BCF		EECON1,6
+    BSF		EECON1,2 ; Enable EEPROM Writes
+    BCF		INTCON,7 ; Disable Interrupts
+WriteLoop:
+    MOVFF	POSTINC0,EEDATA
+    
+    MOVLW	0x55
+    MOVWF	EECON2
+    MOVLW	0xAA
+    MOVWF	EECON2
+    BSF		EECON1,1
+    WriteHold:
+	BTFSC	EECON1,1
+	BRA	WriteHold
+	
+    INCF	EEADR
+    DECFSZ	Count1
+    BRA		WriteLoop
+   
+    BCF		EECON1,2 ; Disable EEPROM Writes
+    BSF		INTCON,7 ; Enable Interrupts
+    return
 ; Code responses for the MARV to send, are stored in a table in Program memory
 ORG 0x5000 
     
